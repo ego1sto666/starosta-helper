@@ -1,10 +1,10 @@
 /* Работа без интернета. Файлы приложения: сначала сеть (чтобы обновления приходили сразу),
-   без сети — из кеша. Шрифты Google — из кеша с фоновым обновлением.
+   без сети — из кеша.
    Запросы к сайту НГТУ не кешируются: расписание загружается только по кнопке. */
-const CACHE = "starosta-v3";
+const CACHE = "starosta-v4";
 const SHELL = ["./", "index.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/app.js",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
-  "assets/Roboto-Medium.woff2", "assets/Roboto-Black.woff2"];
+  "assets/inter-cyrillic.woff2", "assets/inter-latin.woff2"];
 
 self.addEventListener("install", e => {
   // по одному файлу: если какой-то не скачался, остальные всё равно закешируются
@@ -28,14 +28,5 @@ self.addEventListener("fetch", e => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match("index.html"))));
-    return;
-  }
-
-  if (url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com") {
-    e.respondWith(caches.open(CACHE).then(async c => {
-      const hit = await c.match(req);
-      const net = fetch(req).then(res => { if (res.ok || res.type === "opaque") c.put(req, res.clone()).catch(() => {}); return res; }).catch(() => hit);
-      return hit || net;
-    }));
   }
 });

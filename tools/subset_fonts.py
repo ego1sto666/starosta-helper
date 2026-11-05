@@ -1,8 +1,8 @@
-"""Пересобрать облегчённые шрифты сайта из полных (tools/fonts → assets/*.woff2).
+"""Пересобрать облегчённый шрифт значков (tools/fonts → assets/icons.woff2).
 
-Значки: в assets/icons.woff2 попадают только коды из таблицы ICON в js/app.js
+В assets/icons.woff2 попадают только коды из таблицы ICON в js/app.js
 (полный набор Material Design Icons весит 1,3 МБ, нужная часть — несколько КБ).
-Roboto: только латиница, кириллица и типографские знаки.
+Основной шрифт — Inter (assets/inter-*.woff2, с Google Fonts), его пересобирать не нужно.
 
 Запуск из корня проекта (нужен fonttools с brotli):
     pip install fonttools brotli
@@ -16,7 +16,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "tools" / "fonts"
 OUT = ROOT / "assets"
-TEXT = "U+0020-007E,U+00A0-00FF,U+0401,U+0410-044F,U+0451,U+2010-2027,U+2030-203A,U+20AC,U+2116,U+2190-2193,U+2212"
 
 
 def icon_codes():
@@ -41,5 +40,3 @@ def subset(src, out, unicodes, *extra):
 codes = icon_codes()
 print(f"Значков: {len(codes)}")
 subset(SRC / "materialdesignicons-webfont.ttf", OUT / "icons.woff2", ",".join("U+" + c for c in codes), "--no-hinting")
-for weight in ("Medium", "Black"):
-    subset(SRC / f"Roboto-{weight}.ttf", OUT / f"Roboto-{weight}.woff2", TEXT, "--layout-features=kern,liga")

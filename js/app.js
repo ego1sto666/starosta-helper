@@ -278,8 +278,11 @@
   }
   const bar = (p, c, thin) => `<div class="bar${thin ? " bar--thin" : ""}" role="presentation"><i style="width:${Math.max(0, Math.min(100, p))}%;--c:${c}"></i></div>`;
   const sgChip = n => `<span class="chip" style="--c:${sgColor(n)}">${n}-я подгруппа</span>`;
-  const sectionHead = (icon, title, extra = "", count) =>
-    `<div class="section-head">${icon ? ic(icon) : ""}<h2>${esc(title)}${count != null ? `<span class="count num">${count}</span>` : ""}</h2>${extra}</div>`;
+  // «Пары сегодня. 2 пары, 09:45–15:15» — первое предложение чёрное, остальное серое
+  const sectionHead = (icon, title, extra = "", count) => {
+    const i = title.indexOf(". "), head = i > 0 ? `${esc(title.slice(0, i + 1))} <span class="sub">${esc(title.slice(i + 2))}</span>` : esc(title);
+    return `<div class="section-head">${icon ? ic(icon) : ""}<h2>${head}${count != null ? `<span class="count num">${count}</span>` : ""}</h2>${extra}</div>`;
+  };
   const empty = (icon, title, text, action = "") =>
     `<div class="card empty">${ic(icon)}${title ? `<b>${esc(title)}</b>` : ""}<p>${text}</p>${action}</div>`;
   const weekTag = w => w === "even" ? "чётная неделя" : w === "odd" ? "нечётная неделя" : "";
@@ -583,7 +586,7 @@
     return {
       home: true, nav: "home", fab: "quick",
       html: `
-        <div class="home-top"><section class="hero"><h1>Что сегодня<br>по плану?</h1>
+        <div class="home-top"><section class="hero"><h1>Сегодня.<span> Что по плану?</span></h1>
           <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p></section>${nowCard}</div>
         ${notices ? `<div class="stack">${notices}</div>` : ""}
         <div class="tiles">
@@ -593,7 +596,8 @@
         </div>
         <div class="split">
           <div class="stack">
-            ${sectionHead("schedule", "Пары сегодня", `<a class="link" href="#schedule">Расписание</a>`)}
+            ${sectionHead("schedule", (() => { const a = activeOnly(today), s = a.length && lessonSpan(a[0])[0], e = a.length && lessonSpan(a[a.length - 1])[1];
+              return a.length ? `Пары сегодня. ${a.length} ${plural(a.length, ["пара", "пары", "пар"])}${s && e ? `, ${s}–${e}` : ""}` : "Пары сегодня"; })(), `<a class="link" href="#schedule">Расписание</a>`)}
             ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "Можно выдохнуть. Расписание на неделю — во вкладке «Пары».")}
             ${tomorrow.length ? `<a class="tomorrow" href="#schedule" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>` : ""}
           </div>
@@ -890,8 +894,8 @@
           <div class="grid grid--cols2" style="gap:14px 28px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, p]) =>
             `<button class="bar-row" style="text-align:left" data-act="statsSubj" data-s="${esc(k)}"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(p)}">${p}%</b></div>${bar(p, pctColor(p))}</button>`).join("")}</div></section>`}
       </div>
-      ${sectionHead("group", "Студенты", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
-      <p class="hint" style="text-align:left">Сначала те, у кого посещаемость ниже. Нажмите, чтобы открыть пропуски.</p>
+      ${sectionHead("group", "Студенты. Сначала с низкой посещаемостью", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
+      <p class="hint" style="text-align:left">Нажмите на студента, чтобы открыть его пропуски.</p>
       <div class="grid grid--cols">${list.map(({ s, p, abs, exc }) => `<a class="card card--tap person" href="#student/${esc(s.id)}" data-act="fromStats">
         ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b style="color:${pctInk(p)}">${p}%</b></div>
         <div style="margin-top:6px">${bar(p, pctColor(p), true)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div></a>`).join("")}</div>` };
@@ -1040,10 +1044,10 @@
 
   /* ----- Настройки ----- */
   const THEMES = [
-    { id: "system", n: "Как в системе", bg: "linear-gradient(135deg,#F6F8F9 50%,#0F1517 50%)", fg: "#2F3A40", dots: ["#22C79B", "#2DD4A7"] },
-    { id: "mint", n: "Мятная", bg: "#F6F8F9", fg: "#2F3A40", dots: ["#22C79B", "#FF6F61", "#9B8AFB"] },
+    { id: "system", n: "Как в системе", bg: "linear-gradient(135deg,#F5F5F7 50%,#000 50%)", fg: "#1D1D1F", dots: ["#22C79B", "#2DD4A7"] },
+    { id: "mint", n: "Светлая", bg: "#F5F5F7", fg: "#1D1D1F", dots: ["#22C79B", "#FF6F61", "#9B8AFB"] },
     { id: "violet", n: "Фиолетовая", bg: "#F4F5FB", fg: "#1F2240", dots: ["#5B4CF0", "#DC2626", "#D97706"] },
-    { id: "dark", n: "Тёмная", bg: "#0F1517", fg: "#E4ECEE", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
+    { id: "dark", n: "Тёмная", bg: "#000", fg: "#F5F5F7", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
   ];
   SCREENS.settings = () => {
     const cur = store.get("theme", "system"), [s1, s2] = semesterDates(), b = bells();
@@ -1053,7 +1057,7 @@
     return {
       title: "Настройки", back: "#home", nav: "settings",
       html: `
-        ${sectionHead("sun", "Оформление")}
+        ${sectionHead("sun", "Оформление. Тема и цвета")}
         <div class="themes" role="radiogroup" aria-label="Тема">${THEMES.map(t => `<button class="theme-card" role="radio" aria-checked="${cur === t.id}" data-act="theme" data-t="${t.id}">
           <span class="theme-card__preview" style="background:${t.bg};color:${t.fg}"><b>Аа</b><span>${t.dots.map(c => `<i style="background:${c}"></i>`).join("")}</span></span>
           <span class="theme-card__name">${t.n}</span></button>`).join("")}</div>
@@ -1071,7 +1075,7 @@
             </section>
           </div>
           <div class="stack">
-            ${sectionHead("download", "Данные")}
+            ${sectionHead("download", "Данные. Только на этом устройстве")}
             <section class="card" style="padding:4px 14px">
               ${row("Где хранятся", "Только в этом браузере на этом устройстве. Ни сайт, ни НГТУ их не видят.")}
               ${row("Скачать копию", lastBackup ? `Последняя — ${fmtDate(new Date(lastBackup))}` : "Ещё ни разу — стоит сделать", `<button class="btn btn--${needBackup() ? "primary" : "soft"} btn--sm" data-act="exportJson">${ic("download")}Скачать</button>`)}
@@ -1094,7 +1098,7 @@
       title: "Помощник старосты", nav: "home", welcome: true,
       after: fillGroups,
       html: `<div class="welcome">
-        <section class="hero"><h1>Помощник<br>старосты</h1>
+        <section class="hero"><h1>Помощник старосты.<span> Вся группа под рукой.</span></h1>
           <p>Расписание, посещаемость и дела группы НГТУ — в браузере на телефоне и компьютере. Данные хранятся только на этом устройстве.</p></section>
         <section class="card welcome__card">
           <div class="card__head">${ic("school")}<h3>Ваша группа</h3></div>
