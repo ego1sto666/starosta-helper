@@ -61,9 +61,17 @@ async function run() {
   click('#sheet [data-f="move"]'); await until(() => $('form[data-form="move"]'), 2000, "move form");
   const mf = $('form[data-form="move"]'); mf.requestSubmit(); await sleep(150);
   log("2 move no-op error:", text(".form-err"));
+  // пустой номер пары не принимаем
+  mf.num.value = ""; mf.date.value = mf.date.value; mf.requestSubmit(); await sleep(150);
+  log("2 move empty num error:", text(".form-err"));
+  // переносим на ближайшее воскресенье, 1 пару: в этот день пар нет (тест не зависит от дня недели)
+  const sun = new Date(); sun.setDate(sun.getDate() + ((7 - sun.getDay()) % 7 || 7));
+  mf.date.value = `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, "0")}-${String(sun.getDate()).padStart(2, "0")}`;
   mf.num.value = "1"; mf.requestSubmit(); await sleep(300);
   x = data();
   log("2 moved: toast", text("#toast"), "| oneoff", JSON.stringify(x.oneoff), "| overrides", JSON.stringify(x.overrides));
+  log("2 journal went to:", text(".section-head h2, .section-head"));
+  if ($('[data-act="journalToday"]')) { click('[data-act="journalToday"]'); await sleep(200); }
   log("2 schedule now:", $$("#view .lesson").map(c => c.innerText.replace(/\s+/g, " ").slice(0, 90)).join(" || "));
   click($('#view .lesson--cancelled')); await until(() => $('#sheet [data-act="restoreLesson"]'), 2000, "restore");
   click('#sheet [data-act="restoreLesson"]'); await sleep(300);

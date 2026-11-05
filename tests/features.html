@@ -106,6 +106,58 @@ async function run() {
   const back = data().students.find(x => x.id === sid);
   log("8 returned:", !back.status, "| history:", JSON.stringify(back.history));
 
+  // 9. справки: добавить, отметить, должники
+  await go("#tasks/docs"); log("9 tabs:", $$("#view .seg button").map(b => b.textContent).join(" | "), "| empty:", text("#view .empty b"));
+  click("#fab"); await until(() => $('form[data-form="doc"]'), 2000);
+  f = $('form[data-form="doc"]'); f.title.value = "Справка 086/у"; f.note.value = "Деканат, 6-215"; f.requestSubmit();
+  await until(() => W().location.hash.startsWith("#check/docs/"), 2000, "to doc check");
+  await until(() => $('#view [data-act="checkToggle"]'), 2000, "doc list");
+  click($$('#view [data-act="checkToggle"]')[0]); await sleep(200);
+  log("9 doc:", text(".topbar__sub"), "| done:", Object.keys(data().docs[0].done).length);
+
+  // 10. опрос: варианты, ответы, текст для чата
+  await go("#tasks/polls"); click("#fab"); await until(() => $('form[data-form="poll"]'), 2000);
+  f = $('form[data-form="poll"]'); f.title.value = "Когда собрание?"; f.options.value = "Вторник"; f.requestSubmit(); await sleep(150);
+  log("10 one option:", text(".form-err"));
+  f.options.value = "Вторник\nЧетверг\n\nПятница"; f.requestSubmit();
+  await until(() => W().location.hash.startsWith("#poll/"), 2000, "to poll");
+  await until(() => $('#view [data-act="pollAnswer"]'), 2000, "poll list");
+  const opt = $$('#view [data-act="pollAnswer"]'); click(opt[1]); await sleep(150); click($$('#view [data-act="pollAnswer"]')[4]); await sleep(150);
+  click($$('#view [data-act="pollAnswer"]')[5]); await sleep(150); // тот же студент — другой вариант, ответ один
+  const pa = data().polls[0].answers;
+  log("10 poll:", text(".topbar__sub"), "| answers:", JSON.stringify(Object.values(pa)));
+  click('#actionbar [data-act="copyText"]'); await sleep(150); log("10 chat text:", clip.replace(/\n/g, " / "));
+
+  // 11. шаблоны: подстановка
+  await go("#templates"); log("11 templates:", $$("#view .tpl").length, "| first:", text("#view .tpl__text").slice(0, 120));
+  log("11 left braces:", /\{[а-яё_]+\}/i.test($$("#view .tpl__text").map(e => e.textContent).join(" ")));
+
+  // 12. оценки: экзамен, долг, пересдача, стипендия
+  const ex = data().exams.find(x => x.kind !== "Консультация") || null;
+  if (ex) {
+    await go("#grades/" + ex.id); const set = $$('#view [data-act="gradeSet"][data-f="g"]');
+    const sidA = set[0].dataset.id; click(set.find(b => b.dataset.id === sidA && (b.dataset.g === "2" || b.dataset.g === "незач"))); await sleep(200);
+    log("12 retake row:", $$('#view [data-act="gradeSet"][data-f="r"]').length > 0);
+    const r = $$('#view [data-act="gradeSet"][data-f="r"]').find(b => b.dataset.id === sidA); click(r); await sleep(200);
+    log("12 result:", JSON.stringify(data().exams.find(x => x.id === ex.id).results[sidA]));
+    await go("#study/grades"); log("12 grades:", text(".topbar__sub"), "| tiles:", $$("#view .tile b").map(b => b.textContent).join("/"));
+    await go("#student/" + sidA); log("12 student card:", text("#view .grade-pill"));
+  } else log("12 нет экзаменов в данных");
+
+  // 13. контакты: таблица с заголовком и .vcf
+  const st0 = data().students.filter(x => !x.status).slice(2, 4);
+  await go("#group/students"); click('#topbar [data-f="contacts"]'); await until(() => $('form[data-form="contacts"]'), 2000);
+  f = $('form[data-form="contacts"]');
+  f.list.value = `Отметка времени\tФИО\tНомер телефона\tЭлектронная почта\tДата рождения\n05.11.2026 10:00\t${st0[0].name}\t89001234567\ttest1@mail.ru\t2007-03-09\n05.11.2026 10:01\tНекто Новый\t+7 900 765 43 21\tnew@mail.ru\t1.2.2006`;
+  f.list.dispatchEvent(new Event("input", { bubbles: true })); await sleep(100); log("13 preview:", text("#listPreview"));
+  f.requestSubmit(); await sleep(300);
+  const c0 = data().students.find(x => x.id === st0[0].id); log("13 filled:", c0.phone, c0.email, c0.birthday, "| toast:", text("#toast"));
+  click('#topbar [data-f="contacts"]'); await until(() => $('form[data-form="contacts"]'), 2000); f = $('form[data-form="contacts"]');
+  const [fam, nm] = st0[1].name.split(" ");
+  f.list.value = `BEGIN:VCARD\nVERSION:3.0\nN:${fam};${nm};;;\nFN:${nm} ${fam}\nTEL;TYPE=CELL:+7 (912) 000-11-22\nEMAIL:vcf@example.com\nEND:VCARD`;
+  f.requestSubmit(); await sleep(300);
+  const c1 = data().students.find(x => x.id === st0[1].id); log("13 vcf:", c1.phone, c1.email);
+
   log("ERRORS:", errors.join(" | ") || "нет");
 }
 run().catch(e => log("FAIL", e.message, errors.join(" | "))).finally(() => fetch("/__save/result-features.txt", { method: "POST", body: R.join("\n") }));

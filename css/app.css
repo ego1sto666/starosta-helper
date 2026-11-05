@@ -759,3 +759,33 @@ a { color: inherit; text-decoration: none; }
 .list--away .list__row:hover { opacity: 1; }
 .status-card--warn { background: color-mix(in srgb, var(--warn) 10%, var(--card)); }
 .status-card--bad { background: color-mix(in srgb, var(--bad) 8%, var(--card)); }
+
+/* ---------- опросы и оценки: строка студента с вариантами ---------- */
+.poll-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+.poll-row .person__body { flex: 1; min-width: 0; }
+.poll-row__opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip-btn { min-height: 40px; padding: 0 14px; border-radius: 20px; background: var(--field); color: var(--text); font-size: 14px;
+  font-weight: var(--fw-medium); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background var(--dur) var(--ease); }
+.chip-btn:hover { background: var(--press); }
+.chip-btn[aria-pressed="true"] { background: var(--primary-ink); color: #fff; }
+.chip-btn:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+/* оценка: цвет по смыслу, текст тёмный — читается и на мятном, и на янтарном */
+.chip-btn--grade { min-width: 48px; font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; }
+.chip-btn--grade[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 26%, var(--card)); color: var(--text); box-shadow: inset 0 0 0 2px var(--c); }
+.grade-pill { min-width: 38px; height: 28px; padding: 0 9px; border-radius: 14px; display: inline-grid; place-items: center; flex: none;
+  font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--c) 24%, var(--card)); }
+
+/* ---------- шаблоны сообщений ---------- */
+.tpl__text { white-space: pre-line; font-size: 14px; line-height: 1.45; margin: 8px 0 12px; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.tpl-keys summary { cursor: pointer; padding: 2px 0; }
+.tpl-keys code, .tpl-insert .chip-btn { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.tpl-insert { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tpl-insert .chip-btn { min-height: 34px; font-size: 12px; padding: 0 10px; }
+.chip-btn--num { min-width: 48px; font-variant-numeric: tabular-nums; }
+/* плитки с длинной подписью: значок сверху, подпись переносится */
+.tile.tile--stack { grid-template-columns: 1fr; text-align: left; }
+.tile.tile--stack .mdi { grid-row: auto; margin-bottom: 4px; }
+/* пять вкладок в разделе: уже отступы, чтобы помещались на телефоне 360 px */
+.seg--many button { padding: 6px 2px; font-size: 13.5px; }
+@media (min-width: 520px) { .seg--many button { padding: 6px 10px; font-size: inherit; } }

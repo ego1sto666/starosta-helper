@@ -1,7 +1,7 @@
 /* Работа без интернета. Файлы приложения: сначала сеть (чтобы обновления приходили сразу),
    без сети — из кеша.
    Запросы к сайту НГТУ не кешируются: расписание загружается только по кнопке. */
-const CACHE = "starosta-v11";
+const CACHE = "starosta-v12";
 const SHELL = ["./", "index.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/app.js", "demo/group.json",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
   "assets/inter-cyrillic.woff2", "assets/inter-latin.woff2"];
@@ -29,4 +29,15 @@ self.addEventListener("fetch", e => {
       return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match("index.html"))));
   }
+});
+
+// нажали на напоминание — открываем приложение на нужном экране
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const go = (e.notification.data && e.notification.data.url) || "#home";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    const c = list[0];
+    if (c) { c.postMessage({ go }); return c.focus(); }
+    return self.clients.openWindow("./" + go);
+  }));
 });
