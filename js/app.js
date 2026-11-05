@@ -15,6 +15,8 @@
     sun: "F0599", moon: "F0594", coffee: "F06CA", going: "F0008", info: "F02FD", flag: "F023C", star: "F0AE2",
     broom: "F00E2", email: "F01EE", telegram: "F048A", phone: "F03F2", contact: "F05D2", crown: "F01A5",
     deputy: "F0017", translate: "F05CA", search: "F0349", close: "F0156", download: "F01DA", wifioff: "F05AA",
+    cash: "F0116", lock: "F0341", sick: "F06EF", exam: "F1188", works: "F0756", risk: "F002A", chat: "F036A",
+    help: "F0625", backspace: "F0B5C", camera: "F0100", attach: "F03E2",
   };
   const ic = (k, cls = "") => `<i class="mdi ${cls}" aria-hidden="true">&#x${ICON[k] || ICON.info};</i>`;
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -85,7 +87,8 @@
     d.settings.group ??= "";
     if (!Array.isArray(d.settings.bells) || !d.settings.bells.length) d.settings.bells = ["08:00-09:35", "09:45-11:20", "11:35-13:10", "13:40-15:15", "15:25-17:00"];
     if (!Array.isArray(d.settings.semesters)) d.settings.semesters = [];
-    for (const k of ["students", "teachers", "lessons", "tasks", "events"]) if (!Array.isArray(d[k])) d[k] = [];
+    // works — сдачи работ, funds — касса, exams — сессия, sick — больничные
+    for (const k of ["students", "teachers", "lessons", "tasks", "events", "works", "funds", "exams", "sick"]) if (!Array.isArray(d[k])) d[k] = [];
     if (!d.attendance || typeof d.attendance !== "object") d.attendance = {};
     // изменения на конкретные даты: "YYYY-MM-DD|id пары" → { cancel, moved_to, room, teacher, src: manual|nntu }
     if (!d.overrides || typeof d.overrides !== "object" || Array.isArray(d.overrides)) d.overrides = {};
@@ -260,7 +263,8 @@
 
   /* ---------- состояние экрана ---------- */
   const S = { schedDate: null, journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
-    groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group" };
+    groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
+    tasksView: "tasks", worksDone: false, examsPast: false };
 
   /* ---------- общие куски разметки ---------- */
   function donut(parts, size, w, center, label, anim = true) {
@@ -387,9 +391,62 @@
   const greeting = s => `С днём рождения, ${firstName(s.name)}! 🎉 Желаем здоровья, удачи и лёгкой учёбы!`;
   const bdayWhen = x => x.n === 0 ? "сегодня" : `${fmtDate(x.d)}, ${whenText(x.n)}`;
   function bdayReminder() {
-    if (!DB || !sheet.hidden || DB.settings.bday_snooze === key(TODAY)) return;
+    if (!DB || !sheet.hidden || LOCKED || DB.settings.bday_snooze === key(TODAY)) return;
     if (bdayPending().length) openSheet(FORMS.bdays());
   }
+
+  /* ---------- больничные: на эти даты отметка по умолчанию — «у» ---------- */
+  const sickOn = (sid, d) => { const k = typeof d === "string" ? d : key(d); return DB.sick.find(x => x.sid === sid && x.from <= k && k <= x.to); };
+  const sickRange = x => { const a = parseISO(x.from), z = parseISO(x.to); return same(a, z) ? fmtDate(a) : `${fmtDate(a)} — ${fmtDate(z)}`; };
+  // проставить «у» вместо «н» в уже отмеченных парах больничного
+  function applySick(x) {
+    let n = 0;
+    Object.entries(DB.attendance).forEach(([k, r]) => { const ds = k.split("|")[0]; if (ds >= x.from && ds <= x.to && r.marks && r.marks[x.sid] === "н") { r.marks[x.sid] = "у"; n++; } });
+    return n;
+  }
+
+  /* ---------- фото справок: IndexedDB (в localStorage фото не поместятся) ---------- */
+  const PHOTOS = {
+    db: null,
+    open() { return this.db ||= new Promise((res, rej) => { const r = indexedDB.open("starosta-photos", 1); r.onupgradeneeded = () => r.result.createObjectStore("p"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+    async run(mode, fn) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction("p", mode), q = fn(t.objectStore("p")); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }); },
+    put(id, blob) { return this.run("readwrite", s => s.put(blob, id)); },
+    get(id) { return this.run("readonly", s => s.get(id)); },
+    del(id) { return this.run("readwrite", s => s.delete(id)).catch(() => {}); },
+  };
+  // уменьшить фото до 1600 px и сжать в JPEG — около 200 КБ вместо нескольких МБ
+  async function shrinkImage(file, max = 1600) {
+    const img = await createImageBitmap(file), k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return new Promise(res => c.toBlob(res, "image/jpeg", 0.82));
+  }
+
+  /* ---------- риск недопуска: процент по предмету ниже порога ---------- */
+  const riskPct = () => +(DB.settings.risk_pct ?? 70);
+  function riskList() {
+    const recs = periodRecords(String(semInfo(TODAY).num)), by = {};
+    recs.forEach(({ r }) => Object.entries(r.marks || {}).forEach(([sid, m]) => { if (m) ((by[sid] ||= {})[baseSubject(r.subject)] ||= []).push(m); }));
+    return students().map(s => {
+      const subs = Object.entries(by[s.id] || {}).map(([subj, ms]) => ({ subj, pct: attendancePct(ms), abs: ms.filter(m => m === "н").length, n: ms.length }))
+        .filter(x => x.n >= 3 && x.pct != null && x.pct < riskPct()).sort((a, b) => a.pct - b.pct);
+      return subs.length ? { s, subs } : null;
+    }).filter(Boolean).sort((a, b) => a.subs[0].pct - b.subs[0].pct);
+  }
+
+  /* ---------- тексты для чата группы ---------- */
+  const WD_ACC = ["воскресенье", "понедельник", "вторник", "среду", "четверг", "пятницу", "субботу"];
+  function dayText(d) {
+    const ls = dayPlan(d), head = `Расписание на ${WD_ACC[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    if (!ls.length) return `${head}: пар нет.`;
+    return `${head}:\n` + ls.map(l => {
+      const [s, e] = lessonSpan(l), sg = subgroupOf(l.subject), name = baseSubject(l.subject) + (sg ? ` (п/г ${sg})` : "");
+      const when = `${l.num} пара${s ? `, ${s}–${e}` : ""}`;
+      if (l.cancelled) { const to = l.ov.moved_to && DB.oneoff.find(x => x.id === l.ov.moved_to); return `${when} — ${name}: ${to ? `перенесена на ${to.num} пару` : "отменена"}`; }
+      return `${when} — ${name}${l.kind ? `, ${(KIND_SHORT[l.kind] || l.kind).toLowerCase()}` : ""}${l.room ? `, ${l.room}` : ""}${l.one ? (l.from ? " (перенос)" : " (дополнительно)") : ""}`;
+    }).join("\n");
+  }
+  const copyBtn = (text, label, cls = "btn btn--soft btn--sm") => `<button type="button" class="${cls}" data-act="copyText" data-t="${esc(text)}">${ic("copy")}${label}</button>`;
   const eventDate = e => parseISO(e.date);
   const tgLabel = v => v ? (v.startsWith("+") ? v : "@" + v) : "";
   function normTelegram(s) {
@@ -601,8 +658,12 @@
       ${bdays.length ? `<section class="card"><div class="card__head">${ic("cake")}<h3>Дни рождения</h3></div>
         <div class="mini">${bdays.map(x => `<a class="mini__row" href="#student/${esc(x.s.id)}">${avatar(x.s.name)}<div class="mini__body"><div class="mini__title">${esc(x.s.name)}</div><div class="mini__sub">${fmtDate(x.d)} · ${whenText(x.n)}</div></div></a>`).join("")}</div></section>` : ""}`;
 
-    const bToday = upcomingBdays(0);
+    const bToday = upcomingBdays(0), risk = riskList();
+    const exam = DB.exams.filter(x => parseISO(x.date) >= TODAY).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))[0];
+    const examN = exam && daysBetween(TODAY, parseISO(exam.date));
     const notices = [
+      exam && examN <= 21 && `<a class="card card--tap tip tip--link tip--exam" href="#tasks/exams">${ic("exam")}<div class="tip__body"><b>${esc(exam.kind || "Экзамен")}: ${esc(baseSubject(exam.subject))} — ${whenText(examN)}</b><span>${fmtShort(parseISO(exam.date))}${exam.time ? `, ${esc(exam.time)}` : ""}${exam.room ? ` · ${esc(exam.room)}` : ""}</span></div>${ic("right", "tip__arrow")}</a>`,
+      risk.length && `<a class="card card--tap tip tip--link tip--risk" href="#stats" data-act="riskView">${ic("risk")}<div class="tip__body"><b>Риск недопуска: ${risk.length} ${plural(risk.length, ["студент", "студента", "студентов"])}</b><span>${esc(risk.slice(0, 3).map(x => shortName(x.s.name)).join(", "))}${risk.length > 3 ? ` и ещё ${risk.length - 3}` : ""} — посещаемость по предмету ниже ${riskPct()}%</span></div>${ic("right", "tip__arrow")}</a>`,
       bToday.length && `<div class="card tip tip--bday">${ic("cake")}<div class="tip__body"><b>Сегодня день рождения</b><span>${esc(bToday.map(x => x.s.name + (x.age ? ` (${x.age})` : "")).join(", "))}</span></div><button class="btn btn--primary btn--sm" data-act="copyText" data-t="${esc(bToday.map(x => greeting(x.s)).join("\n"))}">${ic("copy")}Поздравление</button></div>`,
       liveNews() && `<div class="card tip tip--live">${ic("calendar")}<div class="tip__body"><b>Изменения в расписании</b><span>На сайте НГТУ: ${LIVE.changes.length} ${plural(LIVE.changes.length, ["изменение", "изменения", "изменений"])} на ближайшие дни</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="live">Посмотреть</button></div>`,
       !DB.lessons.length && `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Загрузите его с сайта НГТУ — это займёт пару секунд.</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="nntu">Загрузить</button></div>`,
@@ -628,7 +689,8 @@
             ${sectionHead("schedule", (() => { const a = activeOnly(today), s = a.length && lessonSpan(a[0])[0], e = a.length && lessonSpan(a[a.length - 1])[1];
               return a.length ? `Пары сегодня. ${a.length} ${plural(a.length, ["пара", "пары", "пар"])}${s && e ? `, ${s}–${e}` : ""}` : "Пары сегодня"; })(), `<a class="link" href="#schedule">Расписание</a>`)}
             ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "Можно выдохнуть. Расписание на неделю — во вкладке «Пары».")}
-            ${tomorrow.length ? `<a class="tomorrow" href="#schedule" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>` : ""}
+            ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="#schedule" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
+              <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(dayText(addDays(TODAY, 1)))}" aria-label="Скопировать расписание на завтра для чата" title="Скопировать расписание на завтра для чата">${ic("chat")}</button></div>` : ""}
           </div>
           <aside class="split__side" aria-label="Сводка">${backupTip}${side}</aside>
         </div>`,
@@ -656,7 +718,7 @@
     const semCount = n => DB.lessons.filter(l => (l.sem || 1) === n).length;
     return {
       title: "Расписание", sub: info.label, nav: "schedule", fab: "schedAdd",
-      actions: [["download", "Обновить с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
+      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ["download", "Обновить с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
       html: `
         <div class="seg seg--fit" role="tablist" aria-label="Семестр">${[1, 2].map(n => `<button role="tab" aria-selected="${info.num === n}" data-act="schedSem" data-n="${n}">${n} семестр</button>`).join("")}</div>
         ${strip}
@@ -719,12 +781,14 @@
     const k = attKey(d, l.id), [list, sg] = roster(l.subject);
     if (!MK || MK.k !== k) {
       const rec = DB.attendance[k];
-      MK = { k, l, d, list, sg, saved: !!rec, rec: rec || { subject: l.subject, num: l.num || 0, kind: l.kind || "", marks: Object.fromEntries(list.map(s => [s.id, "+"])) } };
+      // по умолчанию все «+», а у тех, кто на больничном, — «у»
+      MK = { k, l, d, list, sg, saved: !!rec, rec: rec || { subject: l.subject, num: l.num || 0, kind: l.kind || "", marks: Object.fromEntries(list.map(s => [s.id, sickOn(s.id, d) ? "у" : "+"])) } };
     } else Object.assign(MK, { list, sg });
     const [b, e] = lessonSpan(l), need = subgroupOf(l.subject);
-    let notice = "";
-    if (need && !sg && DB.students.length) notice = `<div class="notice">${ic("subgroups")}<span>Распределите студентов по подгруппам — здесь будет только ${need}-я подгруппа</span><a class="link" href="#subgroups/${encodeURIComponent(baseSubject(l.subject))}">Распределить</a></div>`;
-    else if (sg) { const base = baseSubject(l.subject), own = ownSplit(), free = DB.students.filter(s => !studentSubgroup(s, base, own)).length; if (free) notice = `<div class="notice">${ic("subgroups")}<span>Без подгруппы: <b>${free}</b></span><a class="link" href="#subgroups/${encodeURIComponent(base)}">Распределить</a></div>`; }
+    const ill = list.filter(s => sickOn(s.id, d));
+    let notice = ill.length ? `<div class="notice notice--sick">${ic("sick")}<span>На больничном: <b>${esc(ill.map(s => shortName(s.name)).join(", "))}</b> — отмечены «У»</span></div>` : "";
+    if (need && !sg && DB.students.length) notice += `<div class="notice">${ic("subgroups")}<span>Распределите студентов по подгруппам — здесь будет только ${need}-я подгруппа</span><a class="link" href="#subgroups/${encodeURIComponent(baseSubject(l.subject))}">Распределить</a></div>`;
+    else if (sg) { const base = baseSubject(l.subject), own = ownSplit(), free = DB.students.filter(s => !studentSubgroup(s, base, own)).length; if (free) notice += `<div class="notice">${ic("subgroups")}<span>Без подгруппы: <b>${free}</b></span><a class="link" href="#subgroups/${encodeURIComponent(base)}">Распределить</a></div>`; }
     return {
       title: baseSubject(l.subject), sub: `${fmtShort(d)} · ${l.num || "?"} пара${b ? ` · ${b}–${e}` : ""}${sg ? ` · п/г ${sg}` : ""}`,
       back: "#journal", nav: "journal", focus: true, actions: [["broom", "Удалить отметки занятия", "resetMarks"]],
@@ -802,7 +866,8 @@
   function studentCard(s) {
     const role = s.role === "head" ? `<span style="color:var(--warn-ink)">${ic("crown")} Староста</span>` : s.role === "deputy" ? `<span>${ic("deputy")} Зам. старосты</span>` : "";
     const p = parseBday(s.birthday);
-    const meta = [role, s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
+    const ill = sickOn(s.id, TODAY);
+    const meta = [role, ill ? `<span style="color:var(--excused-ink)">${ic("sick")} на больничном до ${fmtDate(parseISO(ill.to))}</span>` : "", s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
     return `<a class="list__row" href="#student/${esc(s.id)}" data-search="${esc(nameKey(s.name + " " + (s.phone || "")))}">
       ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>${meta ? `<div class="person__meta">${meta}</div>` : ""}</div>${ic("right", "list__chev")}</a>`;
   }
@@ -924,6 +989,13 @@
           <div class="grid grid--cols2" style="gap:14px 28px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, p]) =>
             `<button class="bar-row" style="text-align:left" data-act="statsSubj" data-s="${esc(k)}"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(p)}">${p}%</b></div>${bar(p, pctColor(p))}</button>`).join("")}</div></section>`}
       </div>
+      ${(() => { // риск недопуска — только для текущего семестра
+        if (S.statsPeriod !== String(semInfo(TODAY).num) || S.statsSubject) return "";
+        const rl = riskList();
+        return `${sectionHead("risk", `Риск недопуска. Ниже ${riskPct()}% по предмету`, `<button class="link" data-act="form" data-f="risk">Порог</button>`)}
+          ${rl.length ? `<div class="card list list--cols">${rl.map(({ s, subs }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
+            <div class="person__meta">${subs.map(x => `<span class="chip" style="--c:var(--bad)">${esc(x.subj)} · ${x.pct}%</span>`).join("")}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>`
+            : `<p class="muted" style="font-size:14px">Никого — у всех посещаемость по предметам не ниже ${riskPct()}%.</p>`}`; })()}
       ${sectionHead("group", "Студенты. Сначала отстающие", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
       <p class="hint" style="text-align:left">Нажмите на студента, чтобы открыть его пропуски.</p>
       <div class="card list list--cols">${list.map(({ s, p, abs, exc }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">
@@ -1005,12 +1077,19 @@
     const bday = p ? `<span${nn <= BDAY_AHEAD ? ' style="color:var(--primary-ink);font-weight:var(--fw-bold)"' : ""}>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}${nn === 0 ? " — сегодня!" : nn <= 30 ? `, ${whenText(nn)}` : ""}${age ? ` · исполнится ${age}` : ""}</span>`
       : `<button class="link" style="padding:4px 0" data-act="form" data-f="student" data-id="${esc(s.id)}">${ic("cake")} Указать день рождения</button>`;
     const weeks = Object.keys(st.byWeek).length >= 3;
+    const ill = DB.sick.filter(x => x.sid === s.id).sort((a, b) => b.from.localeCompare(a.from)), illNow = sickOn(s.id, TODAY);
+    const sickCard = `<section class="card"><div class="card__head">${ic("sick")}<h3>Больничные</h3><button class="link" data-act="sickAdd" data-sid="${esc(s.id)}">Добавить</button></div>
+      ${ill.length ? `<div class="mini">${ill.map(x => `<div class="mini__row"><div class="mini__body"><div class="mini__title">${sickRange(x)}${x === illNow ? ` <span class="pill pill--exc" style="height:22px;font-size:11px">сейчас</span>` : ""}</div>${x.note ? `<div class="mini__sub">${esc(x.note)}</div>` : ""}</div>
+        ${x.photo ? `<button class="icon-btn" data-act="sickPhoto" data-id="${esc(x.id)}" aria-label="Фото справки" title="Фото справки">${ic("camera")}</button>` : ""}
+        <button class="icon-btn" data-act="form" data-f="sick" data-id="${esc(x.id)}" aria-label="Изменить" title="Изменить">${ic("edit")}</button></div>`).join("")}</div>`
+        : `<p class="muted" style="font-size:14px">Укажите даты больничного — пары в эти дни отметятся «У» сами.</p>`}</section>`;
     return {
       title: "Студент", sub: (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
       actions: [["edit", "Редактировать", "form", "student", s.id]],
       html: `
         <section class="card profile">${avatar(s.name, "avatar--lg")}<div style="min-width:0"><h2>${esc(s.name)}</h2>
-          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
+          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${illNow ? `<span style="color:var(--excused-ink);font-weight:var(--fw-bold)">${ic("sick")} на больничном до ${fmtDate(parseISO(illNow.to))}</span>` : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
+        ${sickCard}
         ${periodTabs("studentPeriod")}
         ${!st.all.length ? empty("chart", "Отметок пока нет", `За период «${periodName(S.studentPeriod)}» у студента нет отметок.`) : `
         <div class="grid grid--cols2">
@@ -1029,7 +1108,19 @@
   };
 
   /* ----- Дела ----- */
-  SCREENS.tasks = () => {
+  const TASK_VIEWS = [["tasks", "Дела"], ["works", "Сдачи"], ["funds", "Касса"], ["exams", "Сессия"]];
+  const tasksTabs = () => `<div class="seg seg--fit" role="tablist" aria-label="Раздел">${TASK_VIEWS.map(([v, n]) => `<button role="tab" aria-selected="${S.tasksView === v}" data-go="#tasks/${v}">${n}</button>`).join("")}</div>`;
+  const rub = n => `${(+n || 0).toLocaleString("ru-RU")} ₽`;
+  // кто должен сдать работу (с учётом подгруппы предмета) и кто — деньги (вся группа)
+  const checkList = (kind, it) => kind === "works" && it.subject ? roster(it.subject)[0] : students();
+  const checkMap = (kind, it) => kind === "works" ? (it.done ||= {}) : (it.paid ||= {});
+  function checkStats(kind, it) { const list = checkList(kind, it), m = checkMap(kind, it), ok = list.filter(s => m[s.id]); return { list, ok: ok.length, left: list.filter(s => !m[s.id]) }; }
+
+  SCREENS.tasks = (view) => {
+    if (view && TASK_VIEWS.some(([v]) => v === view)) S.tasksView = view;
+    if (S.tasksView === "works") return worksScreen();
+    if (S.tasksView === "funds") return fundsScreen();
+    if (S.tasksView === "exams") return examsScreen();
     const done = S.taskTab === "done";
     const items = DB.tasks.filter(t => !!t.done === done && (!S.taskKind || t.kind === S.taskKind))
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.created || 0) - (b.created || 0));
@@ -1040,13 +1131,96 @@
       <button class="check" data-act="taskDone" data-id="${esc(t.id)}" aria-label="${t.done ? "Вернуть в работу" : "Отметить выполненным"}">${ic(t.done ? "check" : "uncheck")}</button></article>`;
     return {
       title: "Дела", sub: `${nOpen} ${plural(nOpen, ["активное", "активных", "активных"])}`, nav: "tasks", fab: "task",
-      html: `
-        <div class="seg seg--fit" role="tablist"><button role="tab" aria-selected="${!done}" data-act="taskTab" data-t="open">Активные · ${nOpen}</button><button role="tab" aria-selected="${done}" data-act="taskTab" data-t="done">Готово · ${nDone}</button></div>
+      html: `${tasksTabs()}
+        <div class="filter" role="tablist"><button aria-pressed="${!done}" data-act="taskTab" data-t="open">Активные · ${nOpen}</button><button aria-pressed="${done}" data-act="taskTab" data-t="done">Готово · ${nDone}</button></div>
         <div class="filter" role="group" aria-label="Тип">${[["", "Все", ""], ...Object.entries(TASK_KINDS).map(([k, v]) => [k, k, v.i])].map(([k, n, i]) =>
           `<button aria-pressed="${S.taskKind === k}" data-act="taskKind" data-k="${esc(k)}">${i ? ic(i) : ""}${n}</button>`).join("")}</div>
         ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
           : empty("tasks", done ? "Здесь пусто" : "Дел нет", done ? "Выполненные дела появятся здесь." : "Нажмите «+», чтобы добавить дедлайн, объявление или напоминание.")}
         ${done && items.length ? `<button class="btn btn--danger btn--block" data-act="clearDone">${ic("delete")}Удалить выполненные</button>` : ""}`,
+    };
+  };
+
+  /* ----- Сдачи работ: кто сдал лабораторную, реферат, домашку ----- */
+  function worksScreen() {
+    const all = DB.works.map(w => ({ w, ...checkStats("works", w) })), done = S.worksDone;
+    const items = all.filter(x => (x.left.length === 0 && x.list.length > 0) === done).sort((a, b) => (a.w.due || "9999").localeCompare(b.w.due || "9999") || (b.w.created || 0) - (a.w.created || 0));
+    const nOpen = all.filter(x => x.left.length || !x.list.length).length;
+    const card = ({ w, list, ok, left }) => `<a class="card card--tap work" href="#check/works/${esc(w.id)}">
+      <div class="work__head"><div style="min-width:0"><div class="task__title">${esc(w.title)}</div>${w.subject ? `<div class="person__meta" style="margin:2px 0">${esc(w.subject)}</div>` : ""}</div>
+        <b class="num work__count" style="color:${left.length ? "var(--text)" : "var(--ok-ink)"}">${ok}<small>/${list.length}</small></b></div>
+      ${bar(list.length ? ok / list.length * 100 : 0, left.length ? "var(--primary)" : "var(--ok)", true)}
+      <div class="work__foot">${w.due ? dueHtml({ due: w.due, done: !left.length }) : `<div class="due due--ok">без срока</div>`}${left.length ? `<span class="muted">не сдали: ${left.length}</span>` : `<span style="color:var(--ok-ink)">${ic("tick")} сдали все</span>`}</div></a>`;
+    return {
+      title: "Сдачи", sub: `${nOpen} ${plural(nOpen, ["работа собирается", "работы собираются", "работ собираются"])}`, nav: "tasks", fab: "work",
+      html: `${tasksTabs()}
+        <div class="filter"><button aria-pressed="${!done}" data-act="worksDone" data-v="0">Собираю · ${nOpen}</button><button aria-pressed="${done}" data-act="worksDone" data-v="1">Сдали все · ${all.length - nOpen}</button></div>
+        ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
+          : empty("works", done ? "Пока ничего" : "Работ нет", done ? "Работы, которые сдали все, появятся здесь." : "Нажмите «+» и добавьте лабораторную, реферат или домашку — дальше отмечайте, кто сдал, одним нажатием.")}`,
+    };
+  }
+
+  /* ----- Касса группы: сборы денег ----- */
+  function fundsScreen() {
+    const all = DB.funds.map(f => ({ f, ...checkStats("funds", f) })).sort((a, b) => (b.f.created || 0) - (a.f.created || 0));
+    const card = ({ f, list, ok, left }) => `<a class="card card--tap work" href="#check/funds/${esc(f.id)}">
+      <div class="work__head"><div style="min-width:0"><div class="task__title">${esc(f.title)}</div><div class="person__meta" style="margin:2px 0">по ${rub(f.amount)} с человека${f.due ? ` · до ${fmtDate(parseISO(f.due))}` : ""}</div></div>
+        <b class="num work__count">${rub(ok * (+f.amount || 0))}<small> из ${rub(list.length * (+f.amount || 0))}</small></b></div>
+      ${bar(list.length ? ok / list.length * 100 : 0, left.length ? "var(--primary)" : "var(--ok)", true)}
+      <div class="work__foot"><span class="muted">сдали ${ok} из ${list.length}</span>${left.length ? `<span class="muted">ждём: ${left.length}</span>` : `<span style="color:var(--ok-ink)">${ic("tick")} собрано</span>`}</div></a>`;
+    const total = all.reduce((a, x) => a + x.ok * (+x.f.amount || 0), 0);
+    return {
+      title: "Касса", sub: all.length ? `собрано всего ${rub(total)}` : "сборы денег группы", nav: "tasks", fab: "fund",
+      html: `${tasksTabs()}
+        ${all.length ? `<div class="grid grid--cols">${all.map(card).join("")}</div>`
+          : empty("cash", "Сборов пока нет", "Нажмите «+», чтобы начать сбор: на подарок, распечатки, мероприятие. Отмечайте, кто сдал, — сумма посчитается сама.")}`,
+    };
+  }
+
+  /* ----- Сессия: экзамены, зачёты, консультации ----- */
+  const EXAM_KINDS = ["Экзамен", "Зачёт", "Дифзачёт", "Консультация", "Курсовая"];
+  function examsScreen() {
+    const past = S.examsPast, list = DB.exams.filter(x => { const d = parseISO(x.date); return d && (past ? d < TODAY : d >= TODAY); })
+      .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) * (past ? -1 : 1));
+    const nUp = DB.exams.filter(x => parseISO(x.date) >= TODAY).length;
+    const card = x => { const d = parseISO(x.date), n = daysBetween(TODAY, d), c = x.kind === "Консультация" ? "var(--accent-4)" : x.kind === "Зачёт" || x.kind === "Дифзачёт" ? "var(--accent-6)" : "var(--accent-1)";
+      return `<button class="card card--tap event" style="text-align:left" data-act="form" data-f="exam" data-id="${esc(x.id)}"><div class="event__date" style="--c:${c}"><b>${d.getDate()}</b><span>${MON_SHORT[d.getMonth()]}</span></div>
+        <div style="min-width:0"><div class="person__meta" style="margin:0 0 4px"><span class="chip" style="--c:${c}">${esc(x.kind || "Экзамен")}</span><span>${whenText(n)}</span></div>
+        <h3 class="event__title">${esc(baseSubject(x.subject))}</h3>
+        <div class="meta" style="margin-top:4px"><span>${ic("clock")}${WDS[d.getDay()]}${x.time ? ", " + esc(x.time) : ""}</span>${x.room ? `<span>${ic("door")}${esc(x.room)}</span>` : ""}${x.teacher ? `<span>${ic("teacher")}${esc(x.teacher)}</span>` : ""}</div>
+        ${x.note ? `<p class="muted" style="font-size:13px;margin-top:6px;white-space:pre-line">${esc(x.note)}</p>` : ""}</div></button>`; };
+    const text = DB.exams.filter(x => parseISO(x.date) >= TODAY).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))
+      .map(x => `${fmtDate(parseISO(x.date))}${x.time ? " " + x.time : ""} — ${x.kind || "Экзамен"}: ${baseSubject(x.subject)}${x.room ? ", " + x.room : ""}`).join("\n");
+    return {
+      title: "Сессия", sub: nUp ? `впереди: ${nUp}` : "экзамены и зачёты", nav: "tasks", fab: "exam",
+      actions: nUp ? [["chat", "Скопировать расписание сессии для чата", "copyText", "", ""]] : [],
+      after: () => { const b = $('#topbar [data-act="copyText"]'); if (b) b.dataset.t = "Расписание сессии:\n" + text; },
+      html: `${tasksTabs()}
+        <div class="filter"><button aria-pressed="${!past}" data-act="examsPast" data-v="0">Впереди · ${nUp}</button><button aria-pressed="${past}" data-act="examsPast" data-v="1">Прошли</button></div>
+        ${list.length ? `<div class="grid grid--cols">${list.map(card).join("")}</div>`
+          : empty("exam", past ? "Здесь пусто" : "Сессия не запланирована", past ? "Прошедшие экзамены и зачёты появятся здесь." : "Нажмите «+», чтобы добавить экзамен, зачёт или консультацию. На главной появится обратный отсчёт.")}`,
+    };
+  }
+
+  /* ----- Отметки «сдал / не сдал» по работе или сбору ----- */
+  SCREENS.check = (kind, id) => {
+    const isW = kind === "works", it = (isW ? DB.works : DB.funds).find(x => x.id === id), back = `#tasks/${isW ? "works" : "funds"}`;
+    if (!it) return { title: "Не найдено", back, nav: "tasks", html: empty(isW ? "works" : "cash", "", "Возможно, запись удалили.") };
+    const { list, ok, left } = checkStats(kind, it), m = checkMap(kind, it);
+    const verb = isW ? "сдали" : "сдали деньги";
+    const text = left.length ? `${it.title}${isW && it.subject ? ` (${baseSubject(it.subject)})` : ""}${!isW ? ` — по ${rub(it.amount)}` : ""}${it.due ? `, срок ${fmtDate(parseISO(it.due))}` : ""}.\nЕщё не ${verb}: ${left.map(s => s.name).join(", ")}.`
+      : `${it.title}: ${isW ? "сдали все" : "все сдали, спасибо"}!`;
+    return {
+      title: it.title, sub: `${isW ? (it.subject || "работа") : `по ${rub(it.amount)} с человека`} · ${verb} ${ok} из ${list.length}`, back, nav: "tasks", focus: true,
+      actions: [["edit", "Изменить", "form", isW ? "work" : "fund", it.id]],
+      actionbar: `<button class="btn btn--ok" data-act="checkAll" data-k="${kind}" data-id="${esc(it.id)}">${ic("tick")}Все ${isW ? "сдали" : "сдали"}</button>${copyBtn(text, "Должники", "btn btn--primary")}`,
+      html: `
+        <div class="card markbar" style="display:flex">${donut([{ v: ok, c: "var(--here)" }, { v: list.length - ok, c: "var(--track)" }], 44, 7, "", `${ok} из ${list.length}`, false)}
+          <div class="markbar__count num">${isW ? ok : rub(ok * (+it.amount || 0))}<small> ${isW ? `из ${list.length}` : `из ${rub(list.length * (+it.amount || 0))}`}</small></div></div>
+        <p class="hint">Нажмите на студента: ${ic("tick")} — ${isW ? "сдал" : "сдал деньги"}, ещё раз — снять отметку</p>
+        ${list.length ? `<div class="grid mark-list">${list.map(s => toggleRow("checkToggle", `data-k="${kind}" data-i="${esc(it.id)}" data-id="${esc(s.id)}"`, s.name, !!m[s.id])).join("")}</div>`
+          : empty("group", "", "В группе пока нет студентов. Добавьте их во вкладке «Группа».")}
+        <div class="btn-row only-wide" style="margin-top:12px"><button class="btn btn--ok" data-act="checkAll" data-k="${kind}" data-id="${esc(it.id)}">${ic("tick")}Отметить всех</button>${copyBtn(text, "Скопировать должников", "btn btn--primary")}</div>`,
     };
   };
 
@@ -1106,6 +1280,7 @@
                 `<button class="btn btn--neutral btn--sm" data-act="checkNow">Проверить</button>`) : ""}
               ${row("Семестры", `1-й: ${fmtDate(s1[0])} — ${fmtDate(s1[1])} · 2-й: ${fmtDate(s2[0])} — ${fmtDate(s2[1])}`, editBtn("semesters"))}
               ${row("Звонки", `${b.length} ${plural(b.length, ["пара", "пары", "пар"])}, ${b[0][0]}–${b[b.length - 1][1]}`, editBtn("bells"))}
+              ${row("Риск недопуска", `Предупреждать, если посещаемость по предмету ниже ${riskPct()}%`, editBtn("risk"))}
             </section>
           </div>
           <div class="stack">
@@ -1118,7 +1293,11 @@
             </section>
             ${sectionHead("info", "Приложение")}
             <section class="card" style="padding:4px 14px">
-              ${row("Установить", "Иконка на рабочем столе или главном экране, работает без интернета", `<button class="btn btn--primary btn--sm" data-act="install">Установить</button>`)}
+              ${row("Код-пароль", pinSet() ? "Включён — спросим код при открытии и после 5 минут в фоне" : "Выключен. Защитит телефоны и дни рождения одногруппников, если телефон возьмут в руки",
+                pinSet() ? `<div class="btn-row" style="flex-wrap:nowrap"><button class="btn btn--soft btn--sm" data-act="form" data-f="pin">Сменить</button><button class="btn btn--neutral btn--sm" data-act="pinOff">Выключить</button></div>`
+                  : `<button class="btn btn--soft btn--sm" data-act="form" data-f="pin">${ic("lock")}Включить</button>`)}
+              ${row("Установить", "Иконка на рабочем столе или главном экране, работает без интернета. Долгое нажатие на иконку — быстрые действия", `<button class="btn btn--primary btn--sm" data-act="install">Установить</button>`)}
+              ${row("Как пользоваться", "Короткая инструкция: с чего начать и что умеет приложение", `<a class="btn btn--neutral btn--sm" href="#help">${ic("help")}Открыть</a>`)}
               ${row("О приложении", "Неофициальный помощник для старост НГТУ им. Р. Е. Алексеева. Расписание берётся с открытого сайта НГТУ.")}
             </section>
           </div>
@@ -1179,10 +1358,16 @@
         <div class="topbar__actions">${acts}</div>`;
     }
   }
+  // #now — быстрое действие с иконки: отметка пары, которая идёт или будет следующей
+  function nowRoute() {
+    const ls = activeOnly(dayLessons(TODAY)), l = ls.find(x => lessonState(x, TODAY) === "live") || ls.find(x => lessonState(x, TODAY) === "future") || [...ls].reverse().find(x => !DB.attendance[attKey(TODAY, x.id)]);
+    return l ? `#mark/${l.id}/${key(TODAY)}` : "#journal";
+  }
   function render(keepScroll) {
+    if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");
     if (name !== "mark") MK = null;
-    current = DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen();
+    current = LOCKED ? lockScreen() : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen();
     renderTopbar(current); renderNav(current.nav || name);
     view.innerHTML = current.html;
     app.classList.toggle("is-focus", !!current.focus);
@@ -1312,7 +1497,8 @@
 
   const FORMS = {
     quick: () => `${sheetHead("plus", "var(--primary)", "Что добавить?")}<div class="quick">
-      ${[["task", "tasks", "Дело", "var(--bad)"], ["event", "party", "Событие", "var(--accent-5)"], ["schedAdd", "schedule", "Пару", "var(--accent-6)"], ["student", "add_one", "Студента", "var(--accent-2)"]].map(([k, i, n, c]) =>
+      ${[["task", "tasks", "Дело", "var(--bad)"], ["event", "party", "Событие", "var(--accent-5)"], ["schedAdd", "schedule", "Пару", "var(--accent-6)"], ["student", "add_one", "Студента", "var(--accent-2)"],
+        ["work", "works", "Сдачу работы", "var(--accent-6)"], ["fund", "cash", "Сбор денег", "var(--accent-3)"], ["exam", "exam", "Экзамен", "var(--accent-1)"]].map(([k, i, n, c]) =>
         `<button class="card card--tap" data-act="form" data-f="${k}"><span class="badge" style="--c:${c}">${ic(i)}</span><b>${n}</b></button>`).join("")}</div>`,
     task: (id) => { const t = DB.tasks.find(x => x.id === id) || {}; return `${sheetHead("tasks", "var(--bad)", t.id ? "Дело" : "Новое дело")}<form data-form="task" data-id="${esc(t.id || "")}">
       ${field("Заголовок", `<input name="title" required value="${esc(t.title || "")}" placeholder="Например, сдать список в деканат">`)}
@@ -1320,6 +1506,43 @@
       ${field("Срок (необязательно)", `<input name="due" type="date" value="${esc(t.due || "")}">`)}</div>
       ${field("Предмет (необязательно)", `<input name="subject" value="${esc(t.subject || "")}" list="subjList"><datalist id="subjList">${baseSubjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
       ${field("Подробности", textarea("text", t.text || ""))}${formBtns(t.id && "delTask", t.id)}</form>`; },
+    work: (id) => { const w = DB.works.find(x => x.id === id) || {};
+      return `${sheetHead("works", "var(--accent-6)", w.id ? "Работа" : "Новая работа")}<form data-form="work" data-id="${esc(w.id || "")}">
+      ${field("Что сдаём", `<input name="title" required value="${esc(w.title || "")}" placeholder="Лабораторная №3">`)}
+      ${field("Предмет (для подгруппы выберите «… (подгруппа N)»)", `<input name="subject" value="${esc(w.subject || "")}" list="subjects"><datalist id="subjects">${subjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
+      ${field("Срок (необязательно)", `<input name="due" type="date" value="${esc(w.due || "")}">`)}
+      ${formBtns(w.id && "delWork", w.id)}</form>`; },
+    fund: (id) => { const f = DB.funds.find(x => x.id === id) || {};
+      return `${sheetHead("cash", "var(--accent-3)", f.id ? "Сбор" : "Новый сбор")}<form data-form="fund" data-id="${esc(f.id || "")}">
+      ${field("На что собираем", `<input name="title" required value="${esc(f.title || "")}" placeholder="Подарок куратору">`)}
+      <div class="grid grid--cols2" style="gap:0 12px">${field("С человека, ₽", `<input name="amount" type="number" min="0" step="10" inputmode="numeric" required value="${esc(f.amount ?? "")}" placeholder="200">`)}
+      ${field("Собрать до (необязательно)", `<input name="due" type="date" value="${esc(f.due || "")}">`)}</div>
+      ${formBtns(f.id && "delFund", f.id)}</form>`; },
+    exam: (id) => { const x = DB.exams.find(e => e.id === id) || {};
+      return `${sheetHead("exam", "var(--accent-1)", x.id ? "Сессия" : "Экзамен или зачёт")}<form data-form="exam" data-id="${esc(x.id || "")}">
+      ${field("Предмет", `<input name="subject" required value="${esc(x.subject || "")}" list="subjList2" placeholder="Математика"><datalist id="subjList2">${baseSubjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
+      <div class="grid grid--cols2" style="gap:0 12px">${field("Что", select("kind", EXAM_KINDS, x.kind || "Экзамен"))}
+      ${field("Дата", `<input name="date" type="date" required value="${esc(x.date || "")}">`)}
+      ${field("Время", `<input name="time" type="time" value="${esc(x.time || "")}">`)}
+      ${field("Аудитория", `<input name="room" value="${esc(x.room || "")}" placeholder="6125, корп. 6">`)}</div>
+      ${field("Преподаватель", `<input name="teacher" value="${esc(x.teacher || "")}" list="teacherList"><datalist id="teacherList">${DB.teachers.map(t => `<option value="${esc(t.name)}">`).join("")}</datalist>`)}
+      ${field("Заметка (билеты, что взять с собой)", textarea("note", x.note || "", 2))}
+      ${formBtns(x.id && "delExam", x.id)}</form>`; },
+    sick: (id, sid) => { const x = DB.sick.find(e => e.id === id) || { sid: sid || S.sickFor, from: key(TODAY), to: key(TODAY) }, s = DB.students.find(e => e.id === x.sid);
+      return `${sheetHead("sick", "var(--accent-5)", x.id ? "Больничный" : "Новый больничный")}<form data-form="sick" data-id="${esc(x.id || "")}" data-sid="${esc(x.sid || "")}">
+      <p class="muted" style="margin:-6px 0 12px;font-size:14px">${esc(s ? s.name : "")}</p>
+      <div class="grid grid--cols2" style="gap:0 12px">${field("С", `<input name="from" type="date" required value="${esc(x.from)}">`)}${field("По", `<input name="to" type="date" required value="${esc(x.to)}">`)}</div>
+      ${field("Заметка (необязательно)", `<input name="note" value="${esc(x.note || "")}" placeholder="Справка № …">`)}
+      <label class="file-row">${ic("camera")}<span>${x.photo ? "Фото справки сохранено — выбрать другое" : "Фото справки (необязательно)"}</span><input type="file" name="photo" accept="image/*" capture="environment"></label>
+      <p class="hint" style="text-align:left;margin:4px 0 12px">Все пары в эти дни отметятся как «У» — уважительная причина. Фото хранится только на этом устройстве и не попадает в копию данных.</p>
+      ${formBtns(x.id && "delSick", x.id)}</form>`; },
+    pin: () => `${sheetHead("lock", "var(--primary)", pinSet() ? "Новый код-пароль" : "Код-пароль")}<form data-form="pin">
+      <div class="grid grid--cols2" style="gap:0 12px">${field("Код из 4 цифр", `<input name="p1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>`)}
+      ${field("Ещё раз", `<input name="p2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>`)}</div>
+      <p class="hint" style="text-align:left;margin:-4px 0 12px">Код спросим при открытии приложения и после 5 минут в фоне. Восстановить его нельзя — запомните или сохраните копию данных.</p>${formBtns()}</form>`,
+    risk: () => `${sheetHead("risk", "var(--warn)", "Риск недопуска")}<form data-form="risk">
+      ${field("Порог посещаемости по предмету, %", `<input name="pct" type="number" min="10" max="100" step="5" inputmode="numeric" value="${riskPct()}">`)}
+      <p class="hint" style="text-align:left;margin:-4px 0 12px">Студент попадает в список, если по какому-то предмету посещаемость ниже порога (считаем, когда отмечено хотя бы 3 занятия). Уважительные пропуски не учитываются.</p>${formBtns()}</form>`,
     event: (id) => { const e = DB.events.find(x => x.id === id) || {}; return `${sheetHead("party", "var(--accent-5)", e.id ? "Событие" : "Новое событие")}<form data-form="event" data-id="${esc(e.id || "")}">
       ${field("Название", `<input name="title" required value="${esc(e.title || "")}" placeholder="Собрание группы">`)}
       <div class="grid grid--cols2" style="gap:0 12px">${field("Категория", select("kind", Object.keys(EVENT_KINDS), e.kind || "Учёба"))}
@@ -1407,6 +1630,7 @@
         <p class="muted" style="margin:-6px 0 12px;font-size:14px">Группа ${esc(DB.settings.nntu_group)} · ближайшие две недели</p>
         ${L.changes.length ? `<ul class="plan__list">${L.changes.map(c => { const [a, b, t] = line(c); return `<li><span class="dot dot--${t}"></span>${esc(a)}<small>${esc(b)}</small></li>`; }).join("")}</ul>
         <p class="hint" style="text-align:left;margin:10px 0 14px">Изменения применятся только к этим дням. То, что вы меняли вручную, не трогаем.</p>
+        <div class="btn-row" style="margin-bottom:8px">${copyBtn("Изменения в расписании (по сайту НГТУ):\n" + L.changes.map(c => { const [a, b] = line(c); return `• ${a}: ${b}`; }).join("\n"), "Скопировать для чата группы", "btn btn--soft btn--block")}</div>
         <div class="btn-row"><button class="btn btn--neutral" data-act="liveDismiss">Не сейчас</button><button class="btn btn--primary" data-act="liveApply">Применить</button></div>`
         : `<p style="margin-bottom:14px">На ближайшие дни расписание совпадает с сайтом.</p><button class="btn btn--primary btn--block" data-act="closeSheet">Готово</button>`}
         ${perm ? `<p class="hint" style="text-align:left;margin-top:14px">Похоже, на сайте поменялось и постоянное расписание (${perm} ${plural(perm, ["отличие", "отличия", "отличий"])}). <button class="link" data-act="form" data-f="nntu">Обновить постоянное расписание</button></p>` : ""}`; },
@@ -1548,6 +1772,55 @@
         Object.assign(l, { subject: trim(v.subject).replace(/\s+/g, " "), day: +v.day, num: +v.num, week: v.week, kind: v.kind, room: trim(v.room), teacher: trim(v.teacher), sem: +v.sem });
         if (!id) { DB.lessons.push(l); msg = "Пара добавлена"; }
         ensureTeacher(l.teacher); break;
+      }
+      case "work": {
+        if (!trim(v.title)) return err("Укажите, что сдаём");
+        const w = DB.works.find(x => x.id === id) || { id: newId(), created: Date.now(), done: {} };
+        Object.assign(w, { title: trim(v.title), subject: trim(v.subject).replace(/\s+/g, " "), due: v.due || "" });
+        if (!id) { DB.works.push(w); msg = "Работа добавлена — отмечайте, кто сдал"; go = `#check/works/${w.id}`; S.tasksView = "works"; }
+        break;
+      }
+      case "fund": {
+        if (!trim(v.title)) return err("Укажите, на что собираем");
+        if (!(+v.amount > 0)) return err("Укажите сумму с человека");
+        const fu = DB.funds.find(x => x.id === id) || { id: newId(), created: Date.now(), paid: {} };
+        Object.assign(fu, { title: trim(v.title), amount: Math.round(+v.amount), due: v.due || "" });
+        if (!id) { DB.funds.push(fu); msg = "Сбор создан — отмечайте, кто сдал"; go = `#check/funds/${fu.id}`; S.tasksView = "funds"; }
+        break;
+      }
+      case "exam": {
+        if (!trim(v.subject)) return err("Укажите предмет");
+        if (!parseISO(v.date)) return err("Выберите дату");
+        const x = DB.exams.find(e => e.id === id) || { id: newId() };
+        Object.assign(x, { subject: trim(v.subject), kind: v.kind, date: v.date, time: v.time || "", room: trim(v.room), teacher: trim(v.teacher), note: trim(v.note) });
+        if (!id) { DB.exams.push(x); msg = "Добавлено в сессию"; S.tasksView = "exams"; S.examsPast = parseISO(v.date) < TODAY; }
+        break;
+      }
+      case "sick": {
+        const a = parseISO(v.from), z = parseISO(v.to);
+        if (!a || !z) return err("Укажите даты");
+        if (z < a) return err("Дата «по» раньше, чем «с»");
+        const x = DB.sick.find(e => e.id === id) || { id: newId(), sid: f.dataset.sid };
+        Object.assign(x, { from: v.from, to: v.to, note: trim(v.note) });
+        if (!id) DB.sick.push(x);
+        const n = applySick(x);
+        msg = n ? `Больничный сохранён · «Н» → «У»: ${n}` : "Больничный сохранён";
+        const file = f.photo && f.photo.files[0];
+        if (file) shrinkImage(file).then(b => PHOTOS.put(x.id, b)).then(() => { x.photo = true; persist(); render(true); toast("Фото справки сохранено", "camera"); })
+          .catch(() => toast("Не удалось сохранить фото", "info"));
+        break;
+      }
+      case "pin": {
+        if (!/^\d{4}$/.test(v.p1 || "")) return err("Код — ровно 4 цифры");
+        if (v.p1 !== v.p2) return err("Коды не совпадают");
+        const salt = newId();
+        return pinHash(v.p1, salt).then(hash => { store.set("pin", { salt, hash }); closeSheet(); render(true); toast("Код-пароль включён", "lock"); })
+          .catch(() => err("Не удалось сохранить код: браузер не поддерживает шифрование на этом адресе"));
+      }
+      case "risk": {
+        const p = Math.round(+v.pct);
+        if (!(p >= 10 && p <= 100)) return err("Порог — от 10 до 100 %");
+        DB.settings.risk_pct = p; break;
       }
       case "oneoff": {
         if (!trim(v.subject)) return err("Укажите предмет");
@@ -1715,6 +1988,49 @@
       if (o.from && DB.overrides[o.from] && DB.overrides[o.from].moved_to === o.id) delete DB.overrides[o.from];
       persist(); closeSheet(); render(true); toast(o.from ? "Пара вернулась на своё место" : "Разовая пара удалена", "delete");
     },
+    // ----- код-пароль
+    pinKey: el => pinKey(el.dataset.k),
+    pinOff: el => {
+      if (!confirmed(el)) return openSheet(`${sheetHead("lock", "var(--primary)", "Выключить код-пароль?")}<p style="margin-bottom:16px">Приложение будет открываться без кода.</p>
+        <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--danger" data-act="pinOff" data-confirmed="1">Выключить</button></div>`);
+      store.set("pin", null); closeSheet(); render(true); toast("Код-пароль выключен", "lock");
+    },
+    pinForgot: () => openSheet(`${sheetHead("lock", "var(--warn)", "Забыли код?")}
+      <p style="margin-bottom:10px">Код нельзя восстановить: он нигде не хранится в открытом виде.</p>
+      <p class="muted" style="font-size:14px;margin-bottom:16px">Можно стереть данные этого браузера и загрузить сохранённую копию (файл .json). Без копии отметки пропадут.</p>
+      <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--danger" data-act="pinReset">Стереть данные</button></div>`),
+    pinReset: el => {
+      if (!confirmed(el)) return openSheet(FORMS.confirm("Стереть все данные группы в этом браузере?", "pinReset", "", "Стереть"));
+      try { localStorage.removeItem(DATA_KEY); store.set("pin", null); } catch (e) { /* ничего */ }
+      DB = null; LOCKED = false; PIN_IN = ""; closeSheet(); location.hash = ""; render(); toast("Данные стёрты", "delete");
+    },
+    // ----- сдачи, касса, сессия
+    worksDone: el => { S.worksDone = el.dataset.v === "1"; render(true); },
+    examsPast: el => { S.examsPast = el.dataset.v === "1"; render(true); },
+    checkToggle: el => {
+      const kind = el.dataset.k, it = (kind === "works" ? DB.works : DB.funds).find(x => x.id === el.dataset.i), m = checkMap(kind, it), sid = el.dataset.id;
+      if (m[sid]) delete m[sid]; else m[sid] = 1;
+      persist(); render(true);
+      const nu = $(`[data-act="checkToggle"][data-id="${CSS.escape(sid)}"]`); if (nu) { nu.querySelector(".mark__chip").classList.add("pop"); nu.focus({ preventScroll: true }); }
+    },
+    checkAll: el => {
+      const kind = el.dataset.k, it = (kind === "works" ? DB.works : DB.funds).find(x => x.id === el.dataset.id), m = checkMap(kind, it);
+      checkList(kind, it).forEach(s => { m[s.id] = 1; }); persist(); render(true); toast(kind === "works" ? "Все сдали" : "Все сдали деньги");
+    },
+    delWork: el => delAndBack(el, "works", "Удалить работу и все отметки по ней?", "#tasks/works"),
+    delFund: el => delAndBack(el, "funds", "Удалить сбор и все отметки по нему?", "#tasks/funds"),
+    delExam: el => delAndBack(el, "exams", "Удалить из сессии?", "#tasks/exams"),
+    delSick: el => { if (confirmed(el)) PHOTOS.del(el.dataset.id); delAndBack(el, "sick", "Удалить больничный? Отметки «У» в журнале останутся.", null); },
+    sickAdd: el => { S.sickFor = el.dataset.sid; openSheet(FORMS.sick()); },
+    sickPhoto: async el => {
+      try {
+        const blob = await PHOTOS.get(el.dataset.id); if (!blob) return toast("Фото не найдено на этом устройстве", "info");
+        const url = URL.createObjectURL(blob);
+        openSheet(`${sheetHead("camera", "var(--accent-5)", "Справка")}<img class="photo" src="${url}" alt="Фото справки"><div class="btn-row" style="margin-top:12px"><button class="btn btn--neutral" data-act="closeSheet">Закрыть</button></div>`);
+      } catch (e) { toast("Не удалось открыть фото", "info"); }
+    },
+    riskView: () => { S.statsPeriod = String(semInfo(TODAY).num); S.statsSubject = ""; S.from = "stats"; return false; },
+    copyDay: () => copy(dayText(S.schedDate || TODAY), "Расписание скопировано для чата"),
     // ----- дни рождения
     bdaySeen: () => {
       const y = TODAY.getFullYear(), keep = (DB.settings.bday_seen || []).filter(k => +k.split(":")[1] >= y); // старые годы не храним
@@ -1808,7 +2124,7 @@
     },
     wipe: el => {
       if (!confirmed(el)) return openSheet(FORMS.confirm("Удалить все данные группы из этого браузера?", "wipe", "", "Удалить всё"));
-      try { localStorage.removeItem(DATA_KEY); store.set("lastBackup", 0); } catch (e) { /* ничего */ }
+      try { localStorage.removeItem(DATA_KEY); store.set("lastBackup", 0); store.set("pin", null); } catch (e) { /* ничего */ }
       DB = null; MK = null; closeSheet(); location.hash = ""; render(); toast("Данные удалены", "delete");
     },
   };
@@ -1816,6 +2132,12 @@
   function download(blob, name) {
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }
+  // удалить и вернуться к списку (если были на экране этой записи)
+  function delAndBack(el, coll, text, back) {
+    if (!confirmed(el)) return openSheet(FORMS.confirm(text, el.dataset.act, el.dataset.id));
+    DB[coll] = DB[coll].filter(x => x.id !== el.dataset.id); persist(); closeSheet(); toast("Удалено", "delete");
+    if (back && location.hash.startsWith("#check/")) location.hash = back; else render(true);
   }
   function del(el, coll, text) {
     if (!confirmed(el)) return openSheet(FORMS.confirm(text, el.dataset.act, el.dataset.id));
@@ -1893,6 +2215,65 @@
     addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => { /* без офлайна тоже работает */ }));
   }
 
+  /* ---------- код-пароль: экран блокировки ----------
+     Защищает от посторонних глаз, но не шифрует данные: хранится только отпечаток кода (SHA-256 с солью). */
+  const LOCK_AFTER = 5 * 60 * 1000;
+  let LOCKED = false, PIN_IN = "", hiddenAt = 0;
+  function pinSet() { return !!store.get("pin", null); }
+  async function pinHash(pin, salt) {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + ":" + pin));
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+  }
+  function lockScreen() {
+    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
+    return { title: "Код-пароль", welcome: true, html: `<div class="lock">
+      <span class="brand__logo lock__logo">${ic("lock")}</span><h1>Введите код</h1>
+      <div class="lock__dots" aria-live="polite" aria-label="Введено цифр: ${PIN_IN.length} из 4">${[0, 1, 2, 3].map(i => `<i class="${i < PIN_IN.length ? "on" : ""}"></i>`).join("")}</div>
+      <div class="lock__pad">${keys.map(k => !k ? "<span></span>" : `<button type="button" class="lock__key${k === "back" ? " lock__key--back" : ""}" data-act="pinKey" data-k="${k}" aria-label="${k === "back" ? "Стереть" : k}">${k === "back" ? ic("backspace") : k}</button>`).join("")}</div>
+      <button class="link" data-act="pinForgot">Забыли код?</button></div>` };
+  }
+  function lockDots() { $$(".lock__dots i").forEach((d, i) => d.classList.toggle("on", i < PIN_IN.length)); }
+  async function pinCheck() {
+    const p = store.get("pin", null);
+    if (!p || await pinHash(PIN_IN, p.salt) === p.hash) { LOCKED = false; PIN_IN = ""; render(); autoCheck(); setTimeout(bdayReminder, 300); return; }
+    PIN_IN = ""; const d = $(".lock__dots"); if (d) { d.classList.add("shake"); setTimeout(() => { d.classList.remove("shake"); lockDots(); }, 420); }
+  }
+  function pinKey(k) {
+    if (k === "back") PIN_IN = PIN_IN.slice(0, -1); else if (PIN_IN.length < 4) PIN_IN += k;
+    lockDots(); if (PIN_IN.length === 4) pinCheck();
+  }
+  document.addEventListener("keydown", e => {
+    if (!LOCKED) return;
+    if (/^\d$/.test(e.key)) { e.preventDefault(); pinKey(e.key); } else if (e.key === "Backspace") { e.preventDefault(); pinKey("back"); }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+    if (pinSet() && !LOCKED && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER) { LOCKED = true; PIN_IN = ""; closeSheet(); render(); }
+  });
+
+  /* ----- Как пользоваться ----- */
+  SCREENS.help = () => {
+    const step = (n, title, text) => `<div class="help-step"><b class="help-step__n num">${n}</b><div><h3>${title}</h3><p>${text}</p></div></div>`;
+    return {
+      title: "Как пользоваться", back: "#settings", nav: "settings",
+      html: `<section class="hero"><h1>Помощник старосты.<span> Как начать.</span></h1></section>
+        <section class="card stack">
+          ${step(1, "Загрузите расписание", "«Настройки» → «Расписание НГТУ» → номер группы, например 26-ИВТ-2-1. Пары, аудитории, преподаватели и звонки подтянутся с сайта НГТУ, а дальше приложение само раз в день проверяет изменения.")}
+          ${step(2, "Добавьте группу", "«Группа» → «Добавить списком»: вставьте список из чата или выберите файл Excel. Подгруппы — «Подгруппы» → «Задать списками».")}
+          ${step(3, "Отмечайте на паре", "На главной — кнопка «Отметить посещаемость». Нажатие на студента: + был → Н не был → У уважительная. «Копировать» — список отсутствующих для чата.")}
+          ${step(4, "Ведите остальное", "«Дела»: дедлайны, сдачи работ (кто сдал лабораторную), касса группы, сессия. В карточке студента — день рождения и больничные.")}
+          ${step(5, "Сохраняйте копию", "Данные хранятся только в этом браузере. «Настройки» → «Скачать копию» — раз в пару недель, на случай если браузер очистят.")}
+        </section>
+        ${sectionHead("", "Полезно знать")}
+        <section class="card stack" style="font-size:14px">
+          <p>${ic("chat")} <b>Тексты для чата:</b> расписание дня («Пары» → ${ic("chat")}), изменения с сайта НГТУ, должники по сдачам и сборам, поздравления с днём рождения.</p>
+          <p>${ic("download")} <b>Установка:</b> «Настройки» → «Установить». С иконки работает без интернета, долгое нажатие — быстрые действия: «Отметить пару», «Расписание», «Сдачи».</p>
+          <p>${ic("lock")} <b>Код-пароль:</b> в настройках можно включить, чтобы чужой не увидел телефоны и дни рождения одногруппников.</p>
+          <p>${ic("info")} Приложение неофициальное. Расписание берётся с открытого сайта НГТУ, данные группы никуда не отправляются.</p>
+        </section>`,
+    };
+  };
+
   /* ---------- старт ---------- */
   applyMode();
   renderNav("home");
@@ -1902,6 +2283,7 @@
     <div class="skeleton" style="height:120px;border-radius:20px"></div></div>`;
   const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
-  fontsReady.then(() => { render(); autoCheck(); setTimeout(bdayReminder, 400); });
+  if (DB && pinSet()) LOCKED = true;
+  fontsReady.then(() => { render(); if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); } });
   addEventListener("online", () => autoCheck());
 })();
