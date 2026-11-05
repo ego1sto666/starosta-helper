@@ -80,8 +80,8 @@
   const DATA_KEY = "starosta.data";
   // пример для гостей сайта: список и расписание группы 26-ИВТ-2-1, отметки расставляются случайно
   const DEMO_URL = "demo/group.json";
-  // ссылка на Google Форму с отзывами; пока пусто — кнопки «Оценить» не показываются
-  const FEEDBACK_URL = "";
+  // ссылка на Google Форму с отзывами; если пусто — кнопки «Оценить» не показываются
+  const FEEDBACK_URL = "https://forms.gle/VsF3DQgE2heuuHsg7";
   const isDemo = () => !!(DB && DB.settings.demo);
 
   // недостающие поля — как Store._load в main.py
