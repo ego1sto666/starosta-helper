@@ -12,7 +12,6 @@
   ],
   "shortcuts": [
     { "name": "Отметить текущую пару", "short_name": "Отметить", "url": "./#now", "icons": [{ "src": "assets/icon.png", "sizes": "512x512" }] },
-    { "name": "Расписание", "short_name": "Расписание", "url": "./#schedule", "icons": [{ "src": "assets/icon.png", "sizes": "512x512" }] },
     { "name": "Сдачи работ", "short_name": "Сдачи", "url": "./#study/works", "icons": [{ "src": "assets/icon.png", "sizes": "512x512" }] },
     { "name": "Журнал", "short_name": "Журнал", "url": "./#journal", "icons": [{ "src": "assets/icon.png", "sizes": "512x512" }] }
   ]

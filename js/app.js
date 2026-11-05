@@ -16,7 +16,7 @@
     broom: "F00E2", email: "F01EE", telegram: "F048A", phone: "F03F2", contact: "F05D2", crown: "F01A5",
     deputy: "F0017", translate: "F05CA", search: "F0349", close: "F0156", download: "F01DA", wifioff: "F05AA",
     cash: "F0116", lock: "F0341", sick: "F06EF", exam: "F1188", works: "F0756", risk: "F002A", chat: "F036A",
-    help: "F0625", backspace: "F0B5C", camera: "F0100", attach: "F03E2",
+    help: "F0625", backspace: "F0B5C", camera: "F0100", attach: "F03E2", more: "F01D9",
   };
   const ic = (k, cls = "") => `<i class="mdi ${cls}" aria-hidden="true">&#x${ICON[k] || ICON.info};</i>`;
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -267,7 +267,7 @@
   }
 
   /* ---------- состояние экрана ---------- */
-  const S = { schedDate: null, journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
+  const S = { journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
     groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
     tasksView: "tasks", studyView: "works", worksDone: false, examsPast: false };
 
@@ -334,8 +334,10 @@
     // в расписании и у отменённых — меню действий; в журнале и на главной — сразу к отметке
     const menu = mode === "schedule" || st === "cancelled" || l.extra;
     const go = menu && !l.extra ? `data-act="lessonMenu" data-id="${esc(l.id)}" data-d="${key(d)}"` : `data-go="#mark/${esc(l.id)}/${key(d)}"`;
-    return `<div class="${cls}" style="--accent:${accent(title)}" ${go} role="${menu && !l.extra ? "button" : "link"}" tabindex="0" aria-label="${esc(l.subject)}${b ? `, ${b}–${e}` : ""}${st === "cancelled" ? ", отменена" : ""}">
-      ${tag ? `<div class="lesson__tag">${esc(tag)}</div>` : ""}
+    // в журнале у пары есть кнопка «⋯»: перенести, отменить, изменить в расписании
+    const more = mode === "journal" && !menu ? `<button class="icon-btn lesson__more" data-act="lessonMenu" data-id="${esc(l.id)}" data-d="${key(d)}" aria-label="Действия с парой: перенести, отменить, изменить" title="Перенести, отменить, изменить">${ic("more")}</button>` : "";
+    return `<div class="${cls}${more ? " lesson--more" : ""}" style="--accent:${accent(title)}" ${go} role="${menu && !l.extra ? "button" : "link"}" tabindex="0" aria-label="${esc(l.subject)}${b ? `, ${b}–${e}` : ""}${st === "cancelled" ? ", отменена" : ""}">
+      ${more}${tag ? `<div class="lesson__tag">${esc(tag)}</div>` : ""}
       <h3 class="lesson__title">${esc(title)}</h3>${meta}${status}${extra}</div>`;
   }
 
@@ -692,9 +694,9 @@
         <div class="split">
           <div class="stack">
             ${sectionHead("schedule", (() => { const a = activeOnly(today), s = a.length && lessonSpan(a[0])[0], e = a.length && lessonSpan(a[a.length - 1])[1];
-              return a.length ? `Пары сегодня. ${a.length} ${plural(a.length, ["пара", "пары", "пар"])}${s && e ? `, ${s}–${e}` : ""}` : "Пары сегодня"; })(), `<a class="link" href="#schedule">Расписание</a>`)}
+              return a.length ? `Пары сегодня. ${a.length} ${plural(a.length, ["пара", "пары", "пар"])}${s && e ? `, ${s}–${e}` : ""}` : "Пары сегодня"; })(), `<a class="link" href="#journal">Журнал</a>`)}
             ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "Можно выдохнуть. Расписание на неделю — во вкладке «Пары».")}
-            ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="#schedule" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
+            ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="#journal" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
               <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(dayText(addDays(TODAY, 1)))}" aria-label="Скопировать расписание на завтра для чата" title="Скопировать расписание на завтра для чата">${ic("chat")}</button></div>` : ""}
           </div>
           <aside class="split__side" aria-label="Сводка">${backupTip}${side}</aside>
@@ -702,72 +704,47 @@
     };
   };
 
-  /* ----- Пары ----- */
-  SCREENS.schedule = () => {
-    const d = S.schedDate ||= TODAY, info = semInfo(d), mon = monday(d);
-    const days = [0, 1, 2, 3, 4, 5].map(i => addDays(mon, i)), list = dayPlan(d);
+  /* ----- Журнал: расписание и отметки на одном экране ----- */
+  // старые ссылки #schedule ведут в журнал
+  SCREENS.schedule = () => { history.replaceState(null, "", "#journal"); return SCREENS.journal(); };
+  SCREENS.journal = () => {
+    const d = S.journalDate ||= TODAY, list = dayLessons(d), isToday = same(d, TODAY), info = semInfo(d), mon = monday(d);
+    const live = activeOnly(list), marked = live.filter(l => DB.attendance[attKey(d, l.id)]).length;
+    const days = [0, 1, 2, 3, 4, 5].map(i => addDays(mon, i));
     const slotsOf = x => new Set(lessonsOn(x).map(l => lessonSpan(l)[0] + l.num)).size;
     const strip = `<div class="days" role="tablist" aria-label="Дни недели">
-      <button class="icon-btn" data-act="schedWeek" data-n="-7" aria-label="Предыдущая неделя">${ic("left")}</button>
-      ${days.map(x => { const n = slotsOf(x); return `<button class="day${same(x, TODAY) ? " day--today" : ""}" role="tab" aria-selected="${same(x, d)}" data-act="schedDay" data-d="${key(x)}" aria-label="${fmtLong(x)}, ${n} ${plural(n, ["пара", "пары", "пар"])}">
+      <button class="icon-btn" data-act="journalShift" data-n="-7" aria-label="Предыдущая неделя">${ic("left")}</button>
+      ${days.map(x => { const n = slotsOf(x); return `<button class="day${same(x, TODAY) ? " day--today" : ""}" role="tab" aria-selected="${same(x, d)}" data-act="journalDay" data-d="${key(x)}" aria-label="${fmtLong(x)}, ${n} ${plural(n, ["пара", "пары", "пар"])}">
           <span>${WDS[x.getDay()]}</span><b>${x.getDate()}</b><span class="day__dots">${"<i></i>".repeat(Math.min(n, 5))}</span></button>`; }).join("")}
-      <button class="icon-btn" data-act="schedWeek" data-n="7" aria-label="Следующая неделя">${ic("right")}</button></div>`;
-    const b = bells();
-    const bellsCard = `<section class="card"><div class="card__head">${ic("clock")}<h3>Звонки</h3></div>
-      <div class="mini">${b.map((x, i) => `<div class="mini__row"><b class="num" style="width:22px;color:var(--primary-ink)">${i + 1}</b><div class="mini__body num">${x[0]} – ${x[1]}</div></div>`).join("")}</div>
-      <button class="link" style="margin-top:8px" data-act="form" data-f="bells">Изменить звонки</button></section>`;
-    const weekCard = `<section class="card"><div class="card__head">${ic("calendar")}<h3>Неделя</h3></div><div class="mini">${days.map(x => {
-      const ls = lessonsOn(x);
-      return `<button class="mini__row" style="width:100%;text-align:left${same(x, d) ? ";background:var(--field)" : ""}" data-act="schedDay" data-d="${key(x)}"><div class="mini__body"><div class="mini__title">${fmtShort(x)}</div><div class="mini__sub">${ls.length ? `${lessonSpan(ls[0])[0]}–${lessonSpan(ls[ls.length - 1])[1]}` : "нет пар"}</div></div><b class="num">${slotsOf(x) || "—"}</b></button>`;
-    }).join("")}</div></section>`;
-    const semCount = n => DB.lessons.filter(l => (l.sem || 1) === n).length;
-    return {
-      title: "Расписание", sub: info.label, nav: "schedule", fab: "schedAdd",
-      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ["download", "Обновить с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
-      html: `
-        <div class="seg seg--fit" role="tablist" aria-label="Семестр">${[1, 2].map(n => `<button role="tab" aria-selected="${info.num === n}" data-act="schedSem" data-n="${n}">${n} семестр</button>`).join("")}</div>
-        ${strip}
-        <div class="bells only-narrow">${ic("clock")}Звонки: ${b.length} ${plural(b.length, ["пара", "пары", "пар"])}, ${b[0][0]}–${b[b.length - 1][1]}</div>
-        <div class="split">
-          <div class="stack">
-            ${sectionHead("", fmtLong(d), same(d, TODAY) ? `<span class="chip" style="--c:var(--primary)">сегодня</span>` : `<button class="link" data-act="schedToday">К сегодня</button>`)}
-            ${!info.active ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="semesters">${ic("calendar")}Даты семестров</button>`)
-              : list.length ? timeline(list, d, "schedule")
-              : semCount(info.num) ? empty("coffee", "Пар нет", d.getDay() === 0 ? "Воскресенье — выходной." : "В этот день занятий нет. Нажмите «+», чтобы добавить пару.")
-              : empty("schedule", `В ${info.num} семестре пока нет пар`, "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>`)}
-          </div>
-          <aside class="split__side only-wide">${bellsCard}${weekCard}</aside>
-        </div>`,
-    };
-  };
-
-  /* ----- Журнал ----- */
-  SCREENS.journal = () => {
-    const d = S.journalDate ||= TODAY, list = dayLessons(d), isToday = same(d, TODAY), info = semInfo(d);
-    const live = activeOnly(list), marked = live.filter(l => DB.attendance[attKey(d, l.id)]).length, mon = monday(d), diff = daysBetween(TODAY, d);
-    const weekCard = `<section class="card"><div class="card__head">${ic("journal")}<h3>Неделя в журнале</h3></div><div class="mini">${[0, 1, 2, 3, 4, 5].map(i => {
-      const x = addDays(mon, i), ls = activeOnly(dayLessons(x)), mk = ls.filter(l => DB.attendance[attKey(x, l.id)]).length, started = ls.filter(l => lessonState(l, x) !== "future").length;
+      <button class="icon-btn" data-act="journalShift" data-n="7" aria-label="Следующая неделя">${ic("right")}</button></div>`;
+    const weekCard = `<section class="card"><div class="card__head">${ic("journal")}<h3>Неделя в журнале</h3></div><div class="mini">${days.map(x => {
+      const ls = activeOnly(dayLessons(x)), mk = ls.filter(l => DB.attendance[attKey(x, l.id)]).length, started = ls.filter(l => lessonState(l, x) !== "future").length;
       const pill = !ls.length ? `<span class="muted">—</span>` : mk >= started && started ? `<span class="pill pill--ok num">${mk}/${ls.length}</span>` : started ? `<span class="pill pill--warn num">${mk}/${ls.length}</span>` : `<span class="muted num">${mk}/${ls.length}</span>`;
       return `<button class="mini__row" style="width:100%;text-align:left${same(x, d) ? ";background:var(--field)" : ""}" data-act="journalDay" data-d="${key(x)}"><div class="mini__body"><div class="mini__title">${fmtShort(x)}${same(x, TODAY) ? " · сегодня" : ""}</div></div>${pill}</button>`;
     }).join("")}</div></section>`;
+    const bl = bells();
+    const bellsCard = `<section class="card"><div class="card__head">${ic("clock")}<h3>Звонки</h3></div>
+      <div class="mini">${bl.map((x, i) => `<div class="mini__row"><b class="num" style="width:22px;color:var(--primary-ink)">${i + 1}</b><div class="mini__body num">${x[0]} – ${x[1]}</div></div>`).join("")}</div>
+      <button class="link" style="margin-top:8px" data-act="form" data-f="bells">Изменить звонки</button></section>`;
+    const semCount = DB.lessons.filter(l => (l.sem || 1) === info.num).length;
+    const body = !info.active && !list.length ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="semesters">${ic("calendar")}Даты семестров</button>`)
+      : list.length ? timeline(list, d, "journal")
+      : semCount ? empty("coffee", "Пар нет", d.getDay() === 0 ? "Воскресенье — выходной." : "В этот день занятий нет. Нажмите «+», чтобы добавить пару.")
+      : empty("schedule", `В ${info.num} семестре пока нет пар`, "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>`);
     return {
-      title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal",
-      actions: [["calendar", "Выбрать дату", "pickDate"], ["chart", "Итоги", "go", "#stats"]],
-      html: `
-        <div class="card datebar">
-          <button class="icon-btn" data-act="journalShift" data-n="-1" aria-label="Предыдущий день">${ic("left")}</button>
-          <div class="datebar__label"><b>${fmtLong(d)}</b><span>${whenText(diff)}</span></div>
-          <button class="icon-btn" data-act="journalShift" data-n="1" aria-label="Следующий день">${ic("right")}</button>
-        </div>
-        ${isToday ? "" : `<button class="btn btn--soft btn--block" data-act="journalToday">${ic("calendar")}Вернуться к сегодня</button>`}
+      title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
+      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ["download", "Обновить расписание с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
+      html: `${strip}
+        <div class="bells only-narrow">${ic("clock")}Звонки: ${bl.length} ${plural(bl.length, ["пара", "пары", "пар"])}, ${bl[0][0]}–${bl[bl.length - 1][1]}</div>
         <div class="split">
           <div class="stack">
+            ${sectionHead("", fmtLong(d), isToday ? `<span class="chip" style="--c:var(--primary)">сегодня</span>` : `<button class="link" data-act="journalToday">К сегодня</button>`)}
             ${!DB.students.length ? empty("group", "", "В группе нет студентов. Добавьте их во вкладке «Группа».") : ""}
-            ${list.length ? timeline(list, d, "journal") : empty("coffee", info.active ? "В этот день пар нет по расписанию" : info.label, "Выберите другой день стрелками или добавьте пару не по расписанию.")}
+            ${body}
             <button class="btn btn--neutral btn--block" data-act="form" data-f="extra">${ic("plus")}Пара не по расписанию</button>
             <a class="card card--tap tip tip--link" href="#stats">${ic("chart")}<div class="tip__body"><b>Итоги посещаемости</b><span>Проценты по студентам и предметам, выгрузка в Excel</span></div>${ic("right", "tip__arrow")}</a>
           </div>
-          <aside class="split__side only-wide">${weekCard}</aside>
+          <aside class="split__side only-wide">${weekCard}${bellsCard}</aside>
         </div>`,
     };
   };
@@ -1264,13 +1241,13 @@
 
   /* ----- Настройки ----- */
   const THEMES = [
-    { id: "system", n: "Как в системе", bg: "linear-gradient(135deg,#F5F5F7 50%,#000 50%)", fg: "#1D1D1F", dots: ["#22C79B", "#2DD4A7"] },
     { id: "mint", n: "Светлая", bg: "#F5F5F7", fg: "#1D1D1F", dots: ["#22C79B", "#FF6F61", "#9B8AFB"] },
     { id: "violet", n: "Фиолетовая", bg: "#F4F5FB", fg: "#1F2240", dots: ["#5B4CF0", "#DC2626", "#D97706"] },
     { id: "dark", n: "Тёмная", bg: "#000", fg: "#F5F5F7", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
   ];
   SCREENS.settings = () => {
-    const cur = store.get("theme", "system"), [s1, s2] = semesterDates(), b = bells();
+    // пока тему не выбрали вручную, она следует за системой — выделяем ту, что сейчас на экране
+    const st = store.get("theme", "system"), cur = st === "system" ? (isDark() ? "dark" : "mint") : st, [s1, s2] = semesterDates(), b = bells();
     const row = (title, sub, act = "") => `<div class="setting"><div class="setting__body"><b>${title}</b><span>${sub}</span></div>${act}</div>`;
     const editBtn = f => `<button class="btn btn--soft btn--sm" data-act="form" data-f="${f}">${ic("edit")}Изменить</button>`;
     const lastBackup = store.get("lastBackup", 0), ng = DB.settings.nntu_group, synced = parseISO(DB.settings.nntu_synced);
@@ -1389,7 +1366,7 @@
   }
 
   /* ================= КАРКАС ================= */
-  const NAV = [["home", "Сегодня", "home"], ["schedule", "Пары", "schedule"], ["journal", "Журнал", "journal"], ["group", "Группа", "group"], ["study", "Учёба", "exam"], ["tasks", "Внеучебка", "party"]];
+  const NAV = [["home", "Сегодня", "home"], ["journal", "Журнал", "journal"], ["group", "Группа", "group"], ["study", "Учёба", "exam"], ["tasks", "Внеучебка", "party"]];
   const app = $(".app"), view = $("#view"), topbar = $("#topbar"), nav = $("#nav"), fab = $("#fab"), actionbar = $("#actionbar");
   let lastRoute = "", current = null;
 
@@ -1611,14 +1588,14 @@
       ${field("Время", `<input name="time" type="time" value="${esc(e.time || "")}">`)}
       ${field("Место", `<input name="place" value="${esc(e.place || "")}" placeholder="6245, корп. 6">`)}</div>
       ${field("Описание", textarea("text", e.text || ""))}${formBtns(e.id && "delEvent", e.id)}</form>`; },
-    lesson: (id) => { const l = DB.lessons.find(x => x.id === id), b = bells(), info = semInfo(S.schedDate || TODAY);
+    lesson: (id) => { const l = DB.lessons.find(x => x.id === id), b = bells(), info = semInfo(S.journalDate || TODAY);
       return `${sheetHead("schedule", "var(--accent-6)", l ? "Пара" : "Новая пара")}<form data-form="lesson" data-id="${esc(l?.id || "")}">
       ${field("Предмет", `<input name="subject" required value="${esc(l?.subject || "")}" list="subjects" placeholder="Информатика (подгруппа 1)"><datalist id="subjects">${subjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
       <p class="hint" style="text-align:left;margin:-6px 0 10px">Для пары подгруппы допишите «(подгруппа N)».</p>
       <div class="grid grid--cols2" style="gap:0 12px">
         ${field("Семестр", select("sem", [[1, "1 семестр"], [2, "2 семестр"]], l?.sem || info.num))}
         ${field("Тип занятия", select("kind", ["Лекция", "Практика", "Лабораторная", "Семинар", "Другое"], l?.kind || "Лекция"))}
-        ${field("День недели", select("day", WD_PY.map((n, i) => [i, n]), l?.day ?? Math.min(pyDay(S.schedDate || TODAY), 5)))}
+        ${field("День недели", select("day", WD_PY.map((n, i) => [i, n]), l?.day ?? Math.min(pyDay(S.journalDate || TODAY), 5)))}
         ${field("Номер пары", select("num", b.map((x, i) => [i + 1, `${i + 1} пара · ${x[0]}–${x[1]}`]), l?.num || 1))}
         ${field("Неделя", select("week", [["all", "Каждую неделю"], ["odd", "Только нечётная"], ["even", "Только чётная"]], l?.week || "all"))}
         ${field("Аудитория", `<input name="room" value="${esc(l?.room || "")}" placeholder="6342, корп. 6">`)}
@@ -1627,7 +1604,7 @@
       ${l?.start ? `<p class="hint" style="text-align:left;margin:-4px 0 10px">У пары своё время ${esc(l.start)}–${esc(l.end)} — оно сохранится.</p>` : ""}
       ${formBtns(l && "delLesson", l?.id)}</form>`; },
     // разовая пара на конкретный день (в журнале — сразу к отметке)
-    oneoff: (id, toMark) => { const o = DB.oneoff.find(x => x.id === id), d = o ? o.date : key(toMark ? (S.journalDate || TODAY) : (S.schedDate || TODAY));
+    oneoff: (id, toMark) => { const o = DB.oneoff.find(x => x.id === id), d = o ? o.date : key(toMark ? (S.journalDate || TODAY) : (S.journalDate || TODAY));
       return `${sheetHead("calendar", "var(--accent-6)", o ? "Разовая пара" : "Пара не по расписанию")}<form data-form="oneoff" data-id="${esc(o?.id || "")}" data-mark="${toMark ? 1 : ""}">
       ${field("Предмет", `<input name="subject" required value="${esc(o?.subject || "")}" list="subjects" placeholder="Математика"><datalist id="subjects">${subjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
       <div class="grid grid--cols2" style="gap:0 12px">
@@ -1892,7 +1869,7 @@
         if (!id) { DB.oneoff.push(o); msg = "Пара добавлена на " + fmtDate(parseISO(v.date)); }
         ensureTeacher(o.teacher);
         if (f.dataset.mark) { go = `#mark/${o.id}/${o.date}`; msg = ""; }
-        else { S.schedDate = parseISO(v.date); }
+        else { S.journalDate = parseISO(v.date); }
         break;
       }
       case "move": {
@@ -1913,7 +1890,7 @@
           DB.overrides[attKey(d, l.id)] = { cancel: true, moved_to: oid, src: "manual" };
         }
         msg = same(nd, d) ? `Перенесено на ${v.num} пару` : `Перенесено на ${fmtShort(nd)}, ${v.num} пару`;
-        S.schedDate = nd; break;
+        S.journalDate = nd; break;
       }
       case "student": {
         if (!trim(v.name)) return err("Укажите фамилию и имя");
@@ -1969,19 +1946,11 @@
     pickDate: () => {
       const inp = document.createElement("input"); inp.type = "date"; inp.value = key(S.journalDate || TODAY);
       inp.style.cssText = "position:fixed;opacity:0;pointer-events:none;top:0;left:0"; document.body.append(inp);
-      inp.addEventListener("change", () => { const d = parseISO(inp.value); if (d) { S.journalDate = d; S.schedDate = d; render(true); } inp.remove(); });
+      inp.addEventListener("change", () => { const d = parseISO(inp.value); if (d) { S.journalDate = d; render(true); } inp.remove(); });
       inp.addEventListener("blur", () => setTimeout(() => inp.remove(), 300));
       if (inp.showPicker) { try { inp.showPicker(); } catch (e) { inp.click(); } } else inp.click();
     },
-    schedDay: el => { S.schedDate = parseISO(el.dataset.d); render(true); },
-    schedWeek: el => { S.schedDate = addDays(S.schedDate || TODAY, Number(el.dataset.n)); render(true); },
-    schedToday: () => { S.schedDate = TODAY; render(true); },
-    schedTomorrow: () => { S.schedDate = addDays(TODAY, 1); },
-    schedSem: el => {
-      const n = Number(el.dataset.n), ti = semInfo(TODAY);
-      S.schedDate = ti.num === n && ti.active ? TODAY : semesterDates(academicYear(TODAY))[n - 1][0];
-      render(true);
-    },
+    schedTomorrow: () => { S.journalDate = addDays(TODAY, 1); },
     sgPick: (el, e) => { e.stopPropagation(); S.sgPick[el.dataset.k] = Number(el.dataset.i); render(true); return true; },
     journalShift: el => { S.journalDate = addDays(S.journalDate || TODAY, Number(el.dataset.n)); render(true); },
     journalDay: el => { S.journalDate = parseISO(el.dataset.d); render(true); },
@@ -2091,7 +2060,7 @@
       } catch (e) { toast("Не удалось открыть фото", "info"); }
     },
     riskView: () => { S.statsPeriod = String(semInfo(TODAY).num); S.statsSubject = ""; S.from = "stats"; return false; },
-    copyDay: () => copy(dayText(S.schedDate || TODAY), "Расписание скопировано для чата"),
+    copyDay: () => copy(dayText(S.journalDate || TODAY), "Расписание скопировано для чата"),
     // ----- дни рождения
     bdaySeen: () => {
       const y = TODAY.getFullYear(), keep = (DB.settings.bday_seen || []).filter(k => +k.split(":")[1] >= y); // старые годы не храним
@@ -2275,7 +2244,7 @@
   // раз в минуту обновляем «сейчас»: прогресс пары, переход к следующей
   setInterval(() => {
     NOW = new Date(); const t = startOfDay(NOW);
-    if (!same(t, TODAY)) { TODAY = t; S.journalDate = S.schedDate = null; }
+    if (!same(t, TODAY)) { TODAY = t; S.journalDate = null; }
     const r = location.hash.slice(1).split("/")[0] || "home";
     if (DB && sheet.hidden && ["home", "journal"].includes(r) && !document.activeElement?.matches("input, textarea")) render(true);
   }, 60000);

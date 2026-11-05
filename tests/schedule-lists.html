@@ -53,9 +53,9 @@ async function run() {
   click('#sheet [data-act="closeSheet"]');
 
   // ---- 2. ручной перенос, возврат, отмена (на чистых данных)
-  setData(real); await load("#schedule");
+  setData(real); await load("#journal");
   const cards = $$('#view [data-act="lessonMenu"]');
-  log("2 schedule cards:", cards.length, "| fab:", D().getElementById("fab").dataset.kind);
+  log("2 journal cards:", cards.length, "| fab:", D().getElementById("fab").dataset.kind);
   click(cards[0]); await until(() => $('#sheet .menu'), 2000, "menu");
   log("2 menu:", $$("#sheet .menu__item b").map(b => b.textContent).join(" | "));
   click('#sheet [data-f="move"]'); await until(() => $('form[data-form="move"]'), 2000, "move form");
@@ -79,7 +79,7 @@ async function run() {
   const of = $('form[data-form="oneoff"]'); of.subject.value = "Математика"; of.num.value = "6"; of.requestSubmit();
   await until(() => W().location.hash.startsWith("#mark/o"), 3000, "to mark");
   log("2 extra → mark:", W().location.hash, "| title:", text(".topbar__title"));
-  await load("#schedule");
+  await load("#journal");
   log("2 schedule has oneoff:", !!$$("#view .lesson__change").find(e => e.textContent.includes("Разовая")));
 
   // ---- 3. списки: группа

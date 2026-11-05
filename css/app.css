@@ -59,7 +59,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- навигация: нижняя «таблетка» ---------- */
 .nav { position: fixed; z-index: 30; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
-  height: 72px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 6px;
+  height: 72px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 6px;
   background: var(--nav-bg); -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass);
   border: 1px solid var(--border); border-radius: var(--radius-nav); box-shadow: var(--shadow-float);
   max-width: 560px; margin: 0 auto; }
@@ -261,6 +261,9 @@ a { color: inherit; text-decoration: none; }
 .tl-time span { font-size: 12px; color: var(--muted-ink); }
 .tl-cards { display: grid; gap: 8px; min-width: 0; }
 .lesson { display: grid; gap: 4px; }
+/* «⋯» в углу карточки пары: перенести, отменить, изменить (нажатие на саму карточку — сразу к отметке) */
+.lesson--more { padding-right: 52px; }
+.lesson__more { position: absolute; top: 8px; right: 8px; background: transparent; color: var(--muted-ink); }
 .lesson__tag { font-size: var(--fs-tag); font-weight: var(--fw-bold); letter-spacing: .04em; text-transform: uppercase;
   color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
 .lesson__title { font-size: var(--fs-card-title); font-weight: var(--fw-bold); line-height: 1.25; overflow-wrap: anywhere; }

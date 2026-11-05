@@ -75,7 +75,7 @@ async function run() {
   log("5 threshold 50:", text("#view .section-head h2"), "| rows:", $$("#view .list--cols")[0]?.children.length, "| saved:", data().settings.risk_pct);
 
   // 6. тексты для чата и #now
-  await go("#schedule"); click('#topbar [data-act="copyDay"]'); await sleep(200); log("6 day text:", clip.replace(/\n/g, " / ").slice(0, 220));
+  await go("#journal"); click('#topbar [data-act="copyDay"]'); await sleep(200); log("6 day text:", clip.replace(/\n/g, " / ").slice(0, 220));
   await go("#now"); log("6 now →", W().location.hash);
   await go("#help"); log("6 help:", text("#view .hero h1"), "| steps:", $$(".help-step").length);
 
