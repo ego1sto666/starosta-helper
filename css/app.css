@@ -599,3 +599,40 @@ a { color: inherit; text-decoration: none; }
 
 /* стартовый экран: заголовок скромнее, чтобы не разбивался на 4 строки */
 .welcome .hero h1 { font-size: clamp(34px, 6vw, 46px); }
+
+/* ---------- компактные плитки: значок | число и подпись в одну строку ---------- */
+.tiles { display: flex; gap: 10px; }
+.tiles > .tile { flex: 1 1 0; }
+.tile { min-height: 0; padding: 12px 14px; display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px; }
+.tile .mdi { grid-row: span 2; margin: 0; font-size: 24px; }
+.tile b { font-size: 24px; }
+.tile span { line-height: 1.25; }
+@media (min-width: 900px) { .tile { min-height: 0; padding: 14px 18px; } .tiles { max-width: 640px; } }
+
+/* неотмеченная прошедшая пара не бледнеет, а подсвечивается: её нужно отметить */
+.lesson--todo { box-shadow: var(--shadow-card), inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 45%, transparent); }
+
+/* карточка-ссылка («Итоги посещаемости») */
+.tip--link { text-decoration: none; color: inherit; }
+.tip--link .tip__arrow { color: var(--muted); font-size: 22px; margin-left: auto; }
+
+/* ---------- компактный список людей (как в настройках iPhone) ---------- */
+.list { padding: 4px 0; }
+.list__row { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 14px 8px 16px; position: relative;
+  text-decoration: none; color: inherit; break-inside: avoid; transition: background var(--dur) var(--ease); }
+.list__row + .list__row::before { content: ""; position: absolute; top: 0; left: 64px; right: 0; height: 1px;
+  background: color-mix(in srgb, var(--line) 60%, transparent); }
+@media (hover: hover) { .list__row:hover { background: var(--press); } }
+.list__row:active { background: var(--press); }
+.list__row:focus-visible { outline-offset: -2px; border-radius: 12px; }
+.list__row .avatar { width: 36px; height: 36px; font-size: 13px; }
+.list__row .person__body { flex: 1; min-width: 0; }
+.list__row .person__name { font-size: 16px; }
+.list__row .person__meta { margin-top: 2px; }
+.list__chev { color: var(--muted); font-size: 20px; flex: none; }
+/* на ПК — две колонки по строкам; у второй ячейки первой строки нет разделителя сверху */
+@media (min-width: 900px) { .list--cols { display: grid; grid-template-columns: 1fr 1fr; } .list--cols .list__row:nth-child(2)::before { display: none; } }
+
+/* события: две кнопки в один ряд */
+.event .btn-row .btn { flex: 1 1 0; padding: 0 10px; }
+.tip.card--tap { display: flex; }

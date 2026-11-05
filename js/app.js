@@ -319,7 +319,9 @@
         status += `<div class="lesson__status lesson__status--ok">${ic("clock")}Начнётся в ${b}</div>`;
       }
     }
-    const cls = `card card--tap card--accent lesson${st === "past" && mode !== "schedule" ? " lesson--past" : ""}${st === "live" && mode !== "schedule" ? " lesson--live" : ""}${st === "cancelled" ? " lesson--cancelled" : ""}`;
+    // прошедшая пара бледнеет, только когда отмечена: неотмеченная ждёт действия старосты
+    const marked = mode !== "schedule" && DB.attendance[attKey(d, l.id)];
+    const cls = `card card--tap card--accent lesson${st === "past" && marked ? " lesson--past" : ""}${st === "past" && mode !== "schedule" && !marked ? " lesson--todo" : ""}${st === "live" && mode !== "schedule" ? " lesson--live" : ""}${st === "cancelled" ? " lesson--cancelled" : ""}`;
     // в расписании и у отменённых — меню действий; в журнале и на главной — сразу к отметке
     const menu = mode === "schedule" || st === "cancelled" || l.extra;
     const go = menu && !l.extra ? `data-act="lessonMenu" data-id="${esc(l.id)}" data-d="${key(d)}"` : `data-go="#mark/${esc(l.id)}/${key(d)}"`;
@@ -580,7 +582,13 @@
       liveNews() && `<div class="card tip tip--live">${ic("calendar")}<div class="tip__body"><b>Изменения в расписании</b><span>На сайте НГТУ: ${LIVE.changes.length} ${plural(LIVE.changes.length, ["изменение", "изменения", "изменений"])} на ближайшие дни</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="live">Посмотреть</button></div>`,
       !DB.lessons.length && `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Загрузите его с сайта НГТУ — это займёт пару секунд.</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="nntu">Загрузить</button></div>`,
       !DB.students.length && `<div class="card tip">${ic("add_many")}<div class="tip__body"><b>Добавьте студентов</b><span>Без списка группы не получится отмечать посещаемость.</span></div><a class="btn btn--soft btn--sm" href="#group">К группе</a></div>`,
-      needBackup() && `<div class="card tip">${ic("download")}<div class="tip__body"><b>Сохраните копию данных</b><span>Отметки хранятся только в этом браузере. Скачайте файл на случай, если браузер очистят.</span></div><button class="btn btn--soft btn--sm" data-act="exportJson">Скачать</button></div>`,
+    ].filter(Boolean).join("");
+    // напоминание о копии — не срочное, поэтому в боковой колонке (на телефоне — после пар)
+    const backupTip = needBackup() ? `<div class="card tip">${ic("download")}<div class="tip__body"><b>Сохраните копию данных</b><span>Отметки хранятся только в этом браузере. Скачайте файл на случай, если браузер очистят.</span></div><button class="btn btn--soft btn--sm" data-act="exportJson">Скачать</button></div>` : "";
+    // плитки — только когда есть что показать: дела и события на ближайшие две недели
+    const tiles = [
+      open.length && `<a class="card card--tap tile${late ? " tile--alert" : ""}" href="#tasks">${ic(late ? "alarm" : "tasks")}<b class="num">${open.length}</b><span>${late ? `${plural(open.length, ["дело", "дела", "дел"])}, ${late} просрочено` : plural(open.length, ["дело", "дела", "дел"])}</span></a>`,
+      soon.length && `<a class="card card--tap tile" href="#events">${ic("party")}<b class="num">${soon.length}</b><span>${plural(soon.length, ["событие", "события", "событий"])} скоро</span></a>`,
     ].filter(Boolean).join("");
 
     return {
@@ -589,11 +597,7 @@
         <div class="home-top"><section class="hero"><h1>Сегодня.<span> Что по плану?</span></h1>
           <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p></section>${nowCard}</div>
         ${notices ? `<div class="stack">${notices}</div>` : ""}
-        <div class="tiles">
-          <a class="card card--tap tile" href="#schedule">${ic("schedule")}<b class="num">${activeOnly(today).length}</b><span>${plural(activeOnly(today).length, ["пара", "пары", "пар"])} сегодня</span></a>
-          <a class="card card--tap tile${late ? " tile--alert" : ""}" href="#tasks">${ic(late ? "alarm" : "tasks")}<b class="num">${open.length}</b><span>${late ? `${late} просрочено` : plural(open.length, ["дело", "дела", "дел"])}</span></a>
-          <a class="card card--tap tile" href="#events">${ic("party")}<b class="num">${soon.length}</b><span>${plural(soon.length, ["событие", "события", "событий"])}</span></a>
-        </div>
+        ${tiles ? `<div class="tiles">${tiles}</div>` : ""}
         <div class="split">
           <div class="stack">
             ${sectionHead("schedule", (() => { const a = activeOnly(today), s = a.length && lessonSpan(a[0])[0], e = a.length && lessonSpan(a[a.length - 1])[1];
@@ -601,7 +605,7 @@
             ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "Можно выдохнуть. Расписание на неделю — во вкладке «Пары».")}
             ${tomorrow.length ? `<a class="tomorrow" href="#schedule" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>` : ""}
           </div>
-          <aside class="split__side" aria-label="Сводка">${side}</aside>
+          <aside class="split__side" aria-label="Сводка">${backupTip}${side}</aside>
         </div>`,
     };
   };
@@ -669,6 +673,7 @@
             ${!DB.students.length ? empty("group", "", "В группе нет студентов. Добавьте их во вкладке «Группа».") : ""}
             ${list.length ? timeline(list, d, "journal") : empty("coffee", info.active ? "В этот день пар нет по расписанию" : info.label, "Выберите другой день стрелками или добавьте пару не по расписанию.")}
             <button class="btn btn--neutral btn--block" data-act="form" data-f="extra">${ic("plus")}Пара не по расписанию</button>
+            <a class="card card--tap tip tip--link" href="#stats">${ic("chart")}<div class="tip__body"><b>Итоги посещаемости</b><span>Проценты по студентам и предметам, выгрузка в Excel</span></div>${ic("right", "tip__arrow")}</a>
           </div>
           <aside class="split__side only-wide">${weekCard}</aside>
         </div>`,
@@ -752,9 +757,9 @@
     if (isT) body = DB.teachers.length ? `<div class="grid grid--cols" id="people">${DB.teachers.slice().sort(byName).map(teacherCard).join("")}</div>` : empty("teacher", "", "Преподавателей пока нет. Они появятся сами из расписания или добавьте их кнопкой «+».");
     else body = list.length ? `<div id="people" class="stack">
         ${sectionHead("crown", "Актив группы", `<button class="link" data-act="form" data-f="deputies">Замы</button>`)}
-        ${leaders.length ? `<div class="grid grid--cols">${leaders.map(studentCard).join("")}</div>` : `<p class="hint" style="text-align:left">Старосту выберите в карточке студента, замов — кнопкой «Замы».</p>`}
+        ${leaders.length ? `<div class="card list">${leaders.map(studentCard).join("")}</div>` : `<p class="hint" style="text-align:left">Старосту выберите в карточке студента, замов — кнопкой «Замы».</p>`}
         ${sectionHead("group", "Студенты", "", list.length)}
-        <div class="grid grid--cols">${list.map(studentCard).join("")}</div></div>`
+        <div class="card list list--cols">${list.map(studentCard).join("")}</div></div>`
       : empty("group", "В группе нет студентов", "Добавьте их по одному кнопкой «+» или сразу списком.", `<button class="btn btn--soft" data-act="form" data-f="addMany">${ic("add_many")}Добавить списком</button>`);
     return {
       title: "Группа", sub: `${groupName()} · ${list.length} ${plural(list.length, ["студент", "студента", "студентов"])}`, nav: "group", fab: isT ? "teacher" : "student",
@@ -772,9 +777,9 @@
   function studentCard(s) {
     const role = s.role === "head" ? `<span style="color:var(--warn-ink)">${ic("crown")} Староста</span>` : s.role === "deputy" ? `<span>${ic("deputy")} Зам. старосты</span>` : "";
     const p = parseBday(s.birthday);
-    return `<a class="card card--tap person${s.subgroup ? " person--sg" : ""}" href="#student/${esc(s.id)}" style="--accent:${s.subgroup ? sgColor(s.subgroup) : "transparent"}" data-search="${esc(nameKey(s.name + " " + (s.phone || "")))}">
-      ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
-      <div class="person__meta">${role}${s.subgroup ? sgChip(s.subgroup) : ""}${s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : ""}${p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : ""}${s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""}</div></div></a>`;
+    const meta = [role, s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
+    return `<a class="list__row" href="#student/${esc(s.id)}" data-search="${esc(nameKey(s.name + " " + (s.phone || "")))}">
+      ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>${meta ? `<div class="person__meta">${meta}</div>` : ""}</div>${ic("right", "list__chev")}</a>`;
   }
   function teacherCard(t) {
     const subs = teacherSubjects(t);
@@ -797,7 +802,7 @@
       $$("#people [data-search]").forEach(el => { el.hidden = !!q && !el.dataset.search.includes(q); });
       $$("#people .section-head, #people > .hint").forEach(h => { h.hidden = !!q; });
       // при поиске староста и замы не дублируются: прячем блок «Актив группы»
-      const grids = $$("#people > .grid"); if (grids.length > 1) grids[0].hidden = !!q;
+      const grids = $$("#people > .list, #people > .grid"); if (grids.length > 1) grids[0].hidden = !!q;
       const shown = $$("#people [data-search]").filter(el => !el.hidden && !el.closest("[hidden]")).length;
       $("#noResults").hidden = shown > 0;
     });
@@ -1037,7 +1042,7 @@
             ${e.text ? `<p class="muted" style="font-size:13px;margin-top:6px;white-space:pre-line">${esc(e.text)}</p>` : ""}
             <div class="going">${faces ? `<span class="faces">${faces}</span>` : ""}${bar(N ? g.size / N * 100 : 0, "var(--primary)", true)}<b>${g.size} из ${N}</b></div>
             <div class="btn-row" style="margin-top:10px"><button class="btn btn--soft btn--sm" data-act="going" data-id="${esc(e.id)}">${ic("going")}Кто идёт</button>
-            <button class="btn btn--neutral btn--sm" data-act="copyText" data-t="${esc(invite)}">${ic("copy")}Приглашение</button></div></div></article>`;
+            <button class="btn btn--neutral btn--sm" data-act="copyText" data-t="${esc(invite)}">${ic("copy")}Пригласить</button></div></div></article>`;
         }).join("")}</div>` : empty("party", past ? "Прошедших событий нет" : "Событий пока нет", past ? "Здесь будут события, дата которых уже прошла." : "Добавьте собрание, поход или праздник — ближайшие появятся на главной.")}`,
     };
   };
