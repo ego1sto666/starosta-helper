@@ -1,0 +1,13 @@
+{
+  "name": "Помощник старосты",
+  "short_name": "Староста",
+  "description": "Расписание, посещаемость и дела группы",
+  "lang": "ru",
+  "start_url": "./#home",
+  "display": "standalone",
+  "background_color": "#F6F8F9",
+  "theme_color": "#22C79B",
+  "icons": [
+    { "src": "assets/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
