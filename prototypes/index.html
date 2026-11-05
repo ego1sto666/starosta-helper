@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Наброски: вход и почта</title>
+<!-- Макеты будущих экранов — статичные, ничего не отправляют. Открыть: http://127.0.0.1:8765/prototypes/ -->
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/app.css">
+<style>
+  body { padding: 28px 16px 60px; }
+  .proto-head { max-width: 1320px; margin: 0 auto 26px; }
+  .proto-head h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 5vw, 40px); letter-spacing: -0.035em; line-height: 1.1; }
+  .proto-head p { color: var(--muted-ink); margin-top: 10px; max-width: 70ch; }
+  .frames { max-width: 1320px; margin: 0 auto; display: grid; gap: 28px; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); align-items: start; }
+  .frame-cap { font-size: 13px; color: var(--muted-ink); margin: 0 0 8px 6px; }
+  .frame-cap b { color: var(--text); font-weight: var(--fw-bold); }
+  .phone { position: relative; border-radius: 34px; background: var(--bg); padding: 18px 14px 20px; min-height: 640px;
+    box-shadow: 0 0 0 1px var(--border), var(--shadow-float); overflow: hidden;
+    background-image: radial-gradient(130% 30% at 50% -4%, var(--glow), transparent 70%); }
+  .phone > * + * { margin-top: 12px; }
+  .phone .topbar-mini { display: flex; align-items: center; gap: 10px; min-height: 42px; }
+  .phone .topbar-mini h2 { font-size: 18px; font-weight: var(--fw-bold); flex: 1; text-align: center; }
+  .auth-logo { width: 64px; height: 64px; border-radius: 22px; display: grid; place-items: center; font-size: 32px; color: #fff; margin: 26px auto 6px;
+    background: linear-gradient(150deg, var(--primary), var(--primary-dark)); box-shadow: 0 14px 30px -10px color-mix(in srgb, var(--primary-dark) 70%, transparent); }
+  .auth-title { text-align: center; font-family: var(--font-display); font-weight: 600; font-size: 24px; letter-spacing: -0.03em; }
+  .auth-sub { text-align: center; color: var(--muted-ink); font-size: 14px; margin-top: 4px !important; }
+  .pw { position: relative; }
+  .pw .ic { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted-ink); font-size: 20px; }
+  .or { display: flex; align-items: center; gap: 10px; color: var(--muted-ink); font-size: 13px; }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .addr { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 16px; background: var(--primary-soft); }
+  .addr code { flex: 1; min-width: 0; font: 600 14.5px/1.3 var(--font); color: var(--primary-ink); overflow-wrap: anywhere; }
+  .steps { display: grid; gap: 10px; counter-reset: s; }
+  .steps li { list-style: none; display: grid; grid-template-columns: 28px 1fr; gap: 10px; font-size: 14px; line-height: 1.4; }
+  .steps li::before { counter-increment: s; content: counter(s); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--primary-soft); color: var(--primary-ink); font-weight: var(--fw-bold); font-size: 13px; }
+  .steps { padding: 0; margin: 0; }
+  .prov { display: flex; gap: 6px; flex-wrap: wrap; }
+  .mail-card { display: grid; gap: 10px; }
+  .mail-card__from { display: flex; align-items: center; gap: 10px; }
+  .mail-card__from b { font-size: 14.5px; }
+  .mail-card__from small { display: block; color: var(--muted-ink); font-size: 12.5px; }
+  .mail-card__text { font-size: 14px; color: var(--muted-ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .suggest { display: grid; gap: 6px; padding: 12px; border-radius: 14px; background: var(--field); }
+  .suggest__kind { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: var(--fw-bold); color: var(--primary-ink); }
+  .suggest b { font-size: 15px; }
+  .suggest .meta { font-size: 13px; }
+  .note { font-size: 12.5px; color: var(--muted-ink); display: flex; gap: 8px; align-items: flex-start; }
+  .note .ic { color: var(--primary-ink); font-size: 16px; margin-top: 1px; }
+</style>
+</head>
+<body>
+<header class="proto-head">
+  <h1>Наброски: вход и почта</h1>
+  <p>Макеты экранов для следующих шагов (ROADMAP.md, шаги 3–6). Это картинки в стиле приложения: кнопки никуда не ведут, данные выдуманы.
+    Решения по каждому экрану — в server/design/auth.md и server/design/mail.md.</p>
+</header>
+
+<div class="frames">
+  <!-- 1. Вход -->
+  <section>
+    <p class="frame-cap"><b>1. Вход.</b> Логин или почта + пароль. Без аккаунта приложение работает как сейчас.</p>
+    <div class="phone">
+      <div class="auth-logo"><i class="ic">&#xE62C;</i></div>
+      <h2 class="auth-title">Помощник старосты</h2>
+      <p class="auth-sub">Войдите, чтобы данные группы были на всех ваших устройствах и у зама</p>
+      <div class="seg seg--fit" role="tablist"><button role="tab" aria-selected="true">Вход</button><button role="tab" aria-selected="false">Регистрация</button></div>
+      <div>
+        <div class="field"><label>Логин или почта</label><input value="starosta.ivt" autocomplete="username"></div>
+        <div class="field"><label>Пароль</label><div class="pw"><input type="password" value="••••••••••" style="width:100%"><i class="ic">&#xE308;</i></div></div>
+        <button class="btn btn--primary btn--block btn--lg">Войти</button>
+        <p style="text-align:center;margin-top:8px"><a class="link" href="#">Забыли пароль?</a></p>
+      </div>
+      <p class="or">или</p>
+      <button class="btn btn--neutral btn--block">Продолжить без аккаунта</button>
+      <p class="note"><i class="ic">&#xE2CE;</i><span>Без аккаунта данные хранятся только в этом браузере — как сейчас. Войти можно позже в настройках, данные перенесутся.</span></p>
+    </div>
+  </section>
+
+  <!-- 2. Регистрация -->
+  <section>
+    <p class="frame-cap"><b>2. Регистрация.</b> Почта — только для восстановления пароля. Согласие на обработку данных обязательно.</p>
+    <div class="phone">
+      <div class="topbar-mini"><span class="icon-btn"><i class="ic">&#xE058;</i></span><h2>Новый аккаунт</h2><span style="width:42px"></span></div>
+      <div class="field"><label>Логин</label><input value="starosta.ivt"></div>
+      <p class="hint" style="text-align:left;margin:-6px 0 10px">Латиница, цифры, точка или дефис — его вы будете вводить при входе</p>
+      <div class="field"><label>Почта</label><input value="ivanov@yandex.ru" type="email"></div>
+      <div class="field"><label>Пароль</label><input type="password" value="••••••••••"></div>
+      <div class="field"><label>Группа</label><input value="26-ИВТ-2-1"></div>
+      <label class="check-row"><input type="checkbox" checked> Перенести в аккаунт данные с этого устройства</label>
+      <label class="check-row" style="align-items:flex-start"><input type="checkbox" checked style="margin-top:2px"> <span>Согласен на обработку персональных данных по <a class="link" style="padding:0" href="#">политике</a></span></label>
+      <button class="btn btn--primary btn--block btn--lg">Создать аккаунт</button>
+    </div>
+  </section>
+
+  <!-- 3. Подключение почты -->
+  <section>
+    <p class="frame-cap"><b>3. Подключение почты.</b> Основной способ — пересылка: пароль от почты не нужен.</p>
+    <div class="phone">
+      <div class="topbar-mini"><span class="icon-btn"><i class="ic">&#xE058;</i></span><h2>Почта преподавателей</h2><span style="width:42px"></span></div>
+      <div class="card">
+        <div class="card__head"><i class="ic">&#xE218;</i><h3>Адрес вашей группы</h3></div>
+        <div class="addr"><code>26-ivt-2-1-a3f9c1@in.starosta.ru</code><span class="icon-btn" style="background:var(--card)"><i class="ic">&#xE1CA;</i></span></div>
+        <p class="hint" style="text-align:left;padding:0;margin-top:10px">Сюда пересылайте письма преподавателей. Чужие письма приложение не сохраняет.</p>
+      </div>
+      <div class="card">
+        <div class="prov" role="tablist"><span class="chip" style="--c:var(--accent-1)">Яндекс</span><span class="chip" style="--c:var(--muted)">Mail.ru</span><span class="chip" style="--c:var(--muted)">Gmail</span></div>
+        <ol class="steps" style="margin-top:12px">
+          <li><span>Почта → <b>Настройки</b> → <b>Правила обработки писем</b> → «Создать правило»</span></li>
+          <li><span>«Если <b>От кого</b> содержит» — адреса преподавателей. Приложение подставит их из списка</span></li>
+          <li><span>«<b>Переслать по адресу</b>» — адрес группы выше, сохранить</span></li>
+          <li><span>Яндекс пришлёт письмо «подтвердите пересылку» — оно появится здесь, нажмите «Подтвердить»</span></li>
+        </ol>
+      </div>
+      <button class="btn btn--neutral btn--block"><i class="ic">&#xE308;</i>Или подключить ящик паролем приложения</button>
+    </div>
+  </section>
+
+  <!-- 4. Почта: предложения из писем -->
+  <section>
+    <p class="frame-cap"><b>4. «Почта».</b> Письмо → готовое предложение. Решает староста, сами ничего не создаём.</p>
+    <div class="phone">
+      <div class="topbar-mini"><span style="width:42px"></span><h2>Почта</h2><span class="icon-btn"><i class="ic">&#xE272;</i></span></div>
+      <div class="filter"><button aria-pressed="true">Новые · 3</button><button>Готово</button></div>
+      <article class="card mail-card">
+        <div class="mail-card__from"><span class="avatar" style="--c:var(--accent-6)">СА</span><div style="min-width:0"><b>Смирнов А. В.</b><small>Программирование · сегодня 10:15</small></div><i class="ic" style="margin-left:auto;color:var(--muted-ink)">&#xE39A;</i></div>
+        <p class="mail-card__text">Коллеги, отчёты по ЛР3 сдать до 15.11. Задание во вложении, защита на следующей паре.</p>
+        <div class="suggest"><span class="suggest__kind"><i class="ic">&#xE198;</i>Сдача работы</span><b>Лабораторная №3</b>
+          <div class="meta"><span><i class="ic">&#xE19A;</i>до 15 ноября</span><span><i class="ic">&#xE68E;</i>вся группа</span></div></div>
+        <div class="btn-row"><button class="btn btn--primary btn--sm"><i class="ic">&#xE182;</i>Сделать сдачей</button><button class="btn btn--neutral btn--sm">Отклонить</button></div>
+      </article>
+      <article class="card mail-card">
+        <div class="mail-card__from"><span class="avatar" style="--c:var(--accent-1)">КЕ</span><div style="min-width:0"><b>Кузнецова Е. Н.</b><small>Математика · вчера</small></div></div>
+        <p class="mail-card__text">Пара в среду переносится на четверг, 3-я пара, ауд. 6529.</p>
+        <div class="suggest"><span class="suggest__kind" style="color:var(--warn-ink)"><i class="ic">&#xE7B4;</i>Изменение в расписании</span><b>Перенос пары: Математика</b>
+          <div class="meta"><span><i class="ic">&#xE10A;</i>ср → чт, 3 пара</span><span><i class="ic">&#xE7E6;</i>6529</span></div></div>
+        <div class="btn-row"><button class="btn btn--primary btn--sm">Перенести в журнале</button><button class="btn btn--soft btn--sm"><i class="ic">&#xE16E;</i>В чат</button></div>
+      </article>
+    </div>
+  </section>
+</div>
+</body>
+</html>
