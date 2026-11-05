@@ -1,10 +1,11 @@
 /* Работа без интернета. Файлы приложения: сначала сеть (чтобы обновления приходили сразу),
    без сети — из кеша.
    Запросы к сайту НГТУ не кешируются: расписание загружается только по кнопке. */
-const CACHE = "starosta-v13";
+const CACHE = "starosta-v14";
 const SHELL = ["./", "index.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/app.js", "demo/group.json",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
-  "assets/inter-cyrillic.woff2", "assets/inter-latin.woff2"];
+  "assets/icons-fill.woff2", "assets/onest-cyrillic.woff2", "assets/onest-latin.woff2",
+  "assets/unbounded-cyrillic.woff2", "assets/unbounded-latin.woff2"];
 
 self.addEventListener("install", e => {
   // по одному файлу: если какой-то не скачался, остальные всё равно закешируются

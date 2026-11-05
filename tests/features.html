@@ -167,6 +167,14 @@ async function run() {
   click("#view .ava-pick"); await until(() => $('#sheet [data-act="avaDel"]'), 2000, "ava sheet");
   click('#sheet [data-act="avaDel"]'); await sleep(200);
   log("14 removed:", !data().students.find(x => x.id === s14.id).ava, "| profile:", $("#view .ava-pick").getAttribute("aria-label"));
+  // фото из формы «Редактировать»
+  click('#topbar [data-f="student"]'); await until(() => $('form[data-form="student"] #avaField'), 2000, "student form ava");
+  f = $('form[data-form="student"]'); log("14 form ava:", text("#avaField"));
+  f.ava.value = s14.ava = d14.students[0].ava = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  f.requestSubmit(); await sleep(400); log("14 form saved:", !!data().students.find(x => x.id === s14.id).ava, "| sheet closed:", D().getElementById("sheet").hidden);
+  click('#topbar [data-f="student"]'); await until(() => $('#sheet [data-act="avaFormDel"]'), 2000, "del btn");
+  click('#sheet [data-act="avaFormDel"]'); log("14 form after del:", text("#avaField"));
+  $('form[data-form="student"]').requestSubmit(); await sleep(400); log("14 form removed:", !data().students.find(x => x.id === s14.id).ava);
   await go("#tasks/funds"); log("14 funds:", text(".topbar__title"), "|", $$("#view .seg button").map(b => b.textContent).join(" | "), "|", $$("#view .filter button").map(b => b.textContent).join(" | "));
   const fund = data().funds[0];
   if (fund) { await go("#check/funds/" + fund.id); const t = $('#view [data-act="copyText"]') || $('[data-act="copyText"]'); log("14 debtors text:", JSON.stringify((t && t.dataset.t || "").split("\n").slice(0, 4))); }

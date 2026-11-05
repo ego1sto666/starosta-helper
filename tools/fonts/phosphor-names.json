@@ -1,0 +1,266 @@
+{
+ "home": {
+  "name": "house",
+  "code": "E2C2"
+ },
+ "schedule": {
+  "name": "calendar-dots",
+  "code": "E7B4"
+ },
+ "journal": {
+  "name": "notebook",
+  "code": "E34E"
+ },
+ "group": {
+  "name": "users-three",
+  "code": "E68E"
+ },
+ "tasks": {
+  "name": "list-checks",
+  "code": "EADC"
+ },
+ "party": {
+  "name": "confetti",
+  "code": "E81A"
+ },
+ "subgroups": {
+  "name": "users-four",
+  "code": "E68C"
+ },
+ "event": {
+  "name": "calendar-star",
+  "code": "E8B2"
+ },
+ "plus": {
+  "name": "plus",
+  "code": "E3D4"
+ },
+ "delete": {
+  "name": "trash",
+  "code": "E4A6"
+ },
+ "edit": {
+  "name": "pencil-simple",
+  "code": "E3B4"
+ },
+ "copy": {
+  "name": "copy",
+  "code": "E1CA"
+ },
+ "cog": {
+  "name": "gear-six",
+  "code": "E272"
+ },
+ "left": {
+  "name": "caret-left",
+  "code": "E138"
+ },
+ "right": {
+  "name": "caret-right",
+  "code": "E13A"
+ },
+ "back": {
+  "name": "arrow-left",
+  "code": "E058"
+ },
+ "place": {
+  "name": "map-pin",
+  "code": "E316"
+ },
+ "door": {
+  "name": "door-open",
+  "code": "E7E6"
+ },
+ "clock": {
+  "name": "clock",
+  "code": "E19A"
+ },
+ "alarm": {
+  "name": "alarm",
+  "code": "E006"
+ },
+ "teacher": {
+  "name": "chalkboard-teacher",
+  "code": "E600"
+ },
+ "school": {
+  "name": "graduation-cap",
+  "code": "E62C"
+ },
+ "cake": {
+  "name": "cake",
+  "code": "E780"
+ },
+ "bullhorn": {
+  "name": "megaphone-simple",
+  "code": "E642"
+ },
+ "check": {
+  "name": "check-circle",
+  "code": "E184"
+ },
+ "uncheck": {
+  "name": "circle",
+  "code": "E18A"
+ },
+ "tick": {
+  "name": "check",
+  "code": "E182"
+ },
+ "excel": {
+  "name": "file-xls",
+  "code": "EB22"
+ },
+ "chart": {
+  "name": "chart-line-up",
+  "code": "E156"
+ },
+ "add_many": {
+  "name": "list-plus",
+  "code": "E2F8"
+ },
+ "add_one": {
+  "name": "user-plus",
+  "code": "E4D0"
+ },
+ "calendar": {
+  "name": "calendar-blank",
+  "code": "E10A"
+ },
+ "sun": {
+  "name": "sun",
+  "code": "E472"
+ },
+ "moon": {
+  "name": "moon",
+  "code": "E330"
+ },
+ "coffee": {
+  "name": "coffee",
+  "code": "E1C2"
+ },
+ "going": {
+  "name": "user-check",
+  "code": "EAFA"
+ },
+ "info": {
+  "name": "info",
+  "code": "E2CE"
+ },
+ "flag": {
+  "name": "flag",
+  "code": "E244"
+ },
+ "star": {
+  "name": "star",
+  "code": "E46A"
+ },
+ "broom": {
+  "name": "broom",
+  "code": "EC54"
+ },
+ "email": {
+  "name": "envelope-simple",
+  "code": "E218"
+ },
+ "telegram": {
+  "name": "telegram-logo",
+  "code": "E5BC"
+ },
+ "phone": {
+  "name": "phone",
+  "code": "E3B8"
+ },
+ "contact": {
+  "name": "address-book",
+  "code": "E6F8"
+ },
+ "crown": {
+  "name": "crown-simple",
+  "code": "E616"
+ },
+ "deputy": {
+  "name": "medal",
+  "code": "E320"
+ },
+ "translate": {
+  "name": "translate",
+  "code": "E4A2"
+ },
+ "search": {
+  "name": "magnifying-glass",
+  "code": "E30C"
+ },
+ "close": {
+  "name": "x",
+  "code": "E4F6"
+ },
+ "download": {
+  "name": "download-simple",
+  "code": "E20C"
+ },
+ "wifioff": {
+  "name": "wifi-slash",
+  "code": "E4F2"
+ },
+ "cash": {
+  "name": "coins",
+  "code": "E78E"
+ },
+ "lock": {
+  "name": "lock-simple",
+  "code": "E308"
+ },
+ "sick": {
+  "name": "thermometer",
+  "code": "E5C6"
+ },
+ "exam": {
+  "name": "exam",
+  "code": "E742"
+ },
+ "works": {
+  "name": "clipboard-text",
+  "code": "E198"
+ },
+ "risk": {
+  "name": "warning",
+  "code": "E4E0"
+ },
+ "chat": {
+  "name": "chat-circle-text",
+  "code": "E16E"
+ },
+ "help": {
+  "name": "question",
+  "code": "E3E8"
+ },
+ "backspace": {
+  "name": "backspace",
+  "code": "E0AE"
+ },
+ "camera": {
+  "name": "camera",
+  "code": "E10E"
+ },
+ "attach": {
+  "name": "paperclip",
+  "code": "E39A"
+ },
+ "more": {
+  "name": "dots-three",
+  "code": "E1FE"
+ },
+ "doc": {
+  "name": "file-text",
+  "code": "E23A"
+ },
+ "poll": {
+  "name": "chart-bar-horizontal",
+  "code": "E152"
+ },
+ "bell": {
+  "name": "bell-simple",
+  "code": "E0D0"
+ }
+}

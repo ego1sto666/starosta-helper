@@ -5,20 +5,20 @@
 (() => {
   "use strict";
 
-  /* ---------- иконки (коды из Kivy-версии) ---------- */
+  /* ---------- иконки: Phosphor Icons (обычные линии; залитые — у активного пункта меню).
+     Коды из tools/fonts/phosphor-names.json; добавили значок — пересоберите шрифт: python tools/subset_fonts.py */
   const ICON = {
-    home: "F02DE", schedule: "F00F0", journal: "F08A8", group: "F0849", tasks: "F18F9", party: "F1056",
-    subgroups: "F160E", event: "F09D3", plus: "F0415", delete: "F0A7A", edit: "F0CB6", copy: "F018F", cog: "F08BB",
-    left: "F0141", right: "F0142", back: "F004D", place: "F07D9", door: "F081A", clock: "F0150", alarm: "F0020",
-    teacher: "F0CE3", school: "F1180", cake: "F00EB", bullhorn: "F0B23", check: "F05E0", uncheck: "F0130",
-    tick: "F012C", excel: "F138F", chart: "F07AF", add_many: "F0010", add_one: "F0014", calendar: "F00EE",
-    sun: "F0599", moon: "F0594", coffee: "F06CA", going: "F0008", info: "F02FD", flag: "F023C", star: "F0AE2",
-    broom: "F00E2", email: "F01EE", telegram: "F048A", phone: "F03F2", contact: "F05D2", crown: "F01A5",
-    deputy: "F0017", translate: "F05CA", search: "F0349", close: "F0156", download: "F01DA", wifioff: "F05AA",
-    cash: "F0116", lock: "F0341", sick: "F06EF", exam: "F1188", works: "F0756", risk: "F002A", chat: "F036A",
-    help: "F0625", backspace: "F0B5C", camera: "F0100", attach: "F03E2", more: "F01D9", doc: "F0219", poll: "F0128", bell: "F009A",
+    home: "E2C2", schedule: "E7B4", journal: "E34E", group: "E68E", tasks: "EADC", party: "E81A", subgroups: "E68C", event: "E8B2",
+    plus: "E3D4", delete: "E4A6", edit: "E3B4", copy: "E1CA", cog: "E272", left: "E138", right: "E13A", back: "E058", place: "E316",
+    door: "E7E6", clock: "E19A", alarm: "E006", teacher: "E600", school: "E62C", cake: "E780", bullhorn: "E642", check: "E184",
+    uncheck: "E18A", tick: "E182", excel: "EB22", chart: "E156", add_many: "E2F8", add_one: "E4D0", calendar: "E10A", sun: "E472",
+    moon: "E330", coffee: "E1C2", going: "EAFA", info: "E2CE", flag: "E244", star: "E46A", broom: "EC54", email: "E218",
+    telegram: "E5BC", phone: "E3B8", contact: "E6F8", crown: "E616", deputy: "E320", translate: "E4A2", search: "E30C",
+    close: "E4F6", download: "E20C", wifioff: "E4F2", cash: "E78E", lock: "E308", sick: "E5C6", exam: "E742", works: "E198",
+    risk: "E4E0", chat: "E16E", help: "E3E8", backspace: "E0AE", camera: "E10E", attach: "E39A", more: "E1FE", doc: "E23A",
+    poll: "E152", bell: "E0D0",
   };
-  const ic = (k, cls = "") => `<i class="mdi ${cls}" aria-hidden="true">&#x${ICON[k] || ICON.info};</i>`;
+  const ic = (k, cls = "") => `<i class="ic ${cls}" aria-hidden="true">&#x${ICON[k] || ICON.info};</i>`;
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -1364,9 +1364,9 @@
 
   /* ----- Настройки ----- */
   const THEMES = [
-    { id: "mint", n: "Светлая", bg: "#F5F5F7", fg: "#1D1D1F", dots: ["#22C79B", "#FF6F61", "#9B8AFB"] },
+    { id: "mint", n: "Светлая", bg: "#F1F4F2", fg: "#14211C", dots: ["#1FBF8F", "#FF6F61", "#9B8AFB"] },
     { id: "violet", n: "Фиолетовая", bg: "#F4F5FB", fg: "#1F2240", dots: ["#5B4CF0", "#DC2626", "#D97706"] },
-    { id: "dark", n: "Тёмная", bg: "#000", fg: "#F5F5F7", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
+    { id: "dark", n: "Тёмная", bg: "#0A0F0D", fg: "#EDF3F0", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
   ];
   SCREENS.settings = () => {
     // пока тему не выбрали вручную, она следует за системой — выделяем ту, что сейчас на экране
@@ -1836,7 +1836,15 @@
     const ls = activeOnly(dayLessons(TODAY)), l = ls.find(x => lessonState(x, TODAY) === "live") || ls.find(x => lessonState(x, TODAY) === "future") || [...ls].reverse().find(x => !DB.attendance[attKey(TODAY, x.id)]);
     return l ? `#mark/${l.id}/${key(TODAY)}` : "#journal";
   }
+  const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   function render(keepScroll) {
+    // новый экран мягко сменяет старый; перерисовка того же экрана (отметка, фильтр) — мгновенно
+    if (!keepScroll && lastRoute && location.hash !== lastRoute && document.startViewTransition && !calm() && document.visibilityState === "visible") {
+      const t = document.startViewTransition(() => draw(false)); [t.ready, t.finished, t.updateCallbackDone].forEach(p => p && p.catch(() => {})); return;
+    }
+    draw(keepScroll);
+  }
+  function draw(keepScroll) {
     // #demo — прямая ссылка на пример для гостей
     if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (!isDemo()) { ACT.demo(); if (!DB) return; } }
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
@@ -1863,17 +1871,30 @@
     clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("is-on"), 2400);
   }
   const sheet = $("#sheet"); let sheetReturn = null;
+  let sheetT;
   function openSheet(html) {
-    sheetReturn = document.activeElement;
+    clearTimeout(sheetT); sheet.classList.remove("is-closing");
+    if (sheet.hidden) sheetReturn = document.activeElement;
     sheet.innerHTML = `<div class="sheet__panel" role="dialog" aria-modal="true"><div class="sheet__grip"></div>${html}</div>`;
     sheet.hidden = false;
     if ($("#nntuGroups", sheet)) fillGroups();
     const lf = sheet.querySelector('form[data-form="many"], form[data-form="sgLists"]'); if (lf) listPreview(lf);
     setTimeout(() => { const f = sheet.querySelector("input:not([type=radio]), select, textarea"); f && f.focus(); }, 50);
   }
-  function closeSheet() { sheet.hidden = true; sheet.innerHTML = ""; sheetReturn && sheetReturn.focus && sheetReturn.focus(); }
+  function closeSheet() {
+    if (sheet.hidden || sheet.classList.contains("is-closing")) return;
+    const done = () => { sheet.hidden = true; sheet.innerHTML = ""; sheet.classList.remove("is-closing"); };
+    if (calm()) done(); else { sheet.classList.add("is-closing"); sheetT = setTimeout(done, 200); }
+    sheetReturn && sheetReturn.isConnected && sheetReturn.focus && sheetReturn.focus({ preventScroll: true });
+  }
   sheet.addEventListener("click", e => { if (e.target === sheet) closeSheet(); });
   const sheetHead = (icon, c, title) => `<div class="sheet__head"><span class="badge" style="--c:${c}">${ic(icon)}</span><h2>${esc(title)}</h2><button type="button" class="icon-btn" style="margin-left:auto" data-act="closeSheet" aria-label="Закрыть">${ic("close")}</button></div>`;
+  // фото в форме студента: val — новое фото (data:…), «-» — убрать, пусто — оставить как есть
+  const avaField = (p, val = "") => { const cur = val === "-" ? "" : val || p.ava || "";
+    return `<div class="ava-field" id="avaField">${avatar({ name: p.name || "?", ava: cur }, "avatar--lg")}<div class="btn-row">
+      <button type="button" class="btn btn--neutral btn--sm" data-act="avaForm">${ic("camera")}${cur ? "Другое фото" : "Добавить фото"}</button>
+      ${cur ? `<button type="button" class="btn btn--ghost btn--sm" data-act="avaFormDel">Убрать</button>` : ""}</div><input type="hidden" name="ava" value="${esc(val)}"></div>`; };
+  const setAvaField = (f, val) => { const s = DB.students.find(x => x.id === f.dataset.id) || {}; $("#avaField", f).outerHTML = avaField({ ...s, name: f.name.value.trim() || s.name }, val); };
   const field = (label, input) => `<div class="field"><label>${label}</label>${input}</div>`;
   const textarea = (name, value, rows = 3, ph = "") => `<textarea name="${name}" rows="${rows}" placeholder="${esc(ph)}" style="border-radius:14px;border:0;background:var(--field);padding:12px 14px;font-size:15px;resize:vertical">${esc(value)}</textarea>`;
   const formErr = `<p class="form-err" style="color:var(--bad-ink);font-size:13px;margin:-4px 0 10px" role="alert" hidden></p>`;
@@ -2142,6 +2163,7 @@
         ${perm ? `<p class="hint" style="text-align:left;margin-top:14px">Похоже, на сайте поменялось и постоянное расписание (${perm} ${plural(perm, ["отличие", "отличия", "отличий"])}). <button class="link" data-act="form" data-f="nntu">Обновить постоянное расписание</button></p>` : ""}`; },
     student: (id) => { const s = DB.students.find(x => x.id === id), n = splitSize(null);
       return `${sheetHead("add_one", "var(--accent-2)", s ? "Студент" : "Новый студент")}<form data-form="student" data-id="${esc(s?.id || "")}">
+      ${avaField(s || { name: "" })}
       ${field("Фамилия и имя", `<input name="name" required value="${esc(s?.name || "")}" placeholder="Иванов Иван">`)}
       <div class="grid grid--cols2" style="gap:0 12px">
         ${field("Роль в группе", select("role", [["", "Студент"], ["head", "Староста"], ["deputy", "Зам. старосты"]], s?.role || ""))}
@@ -2417,6 +2439,7 @@
         const s = DB.students.find(x => x.id === id) || { id: newId(), name: "", phone: "", birthday: "", note: "", role: "" };
         if (v.role === "head") DB.students.forEach(o => { if (o !== s && o.role === "head") o.role = ""; }); // староста в группе один
         Object.assign(s, { name: trim(v.name).replace(/\s+/g, " "), role: v.role, subgroup: +v.subgroup, phone: trim(v.phone), birthday: trim(v.birthday), note: trim(v.note), email: trim(v.email), telegram: tg || "" });
+        if (v.ava === "-") delete s.ava; else if (v.ava) s.ava = v.ava;
         if (!id) { DB.students.push(s); msg = "Студент добавлен"; } break;
       }
       case "academ": case "expel": {
@@ -2610,6 +2633,11 @@
         try { s.ava = await avatarImage(file); } catch (e) { return toast("Не удалось открыть фото — подойдут JPG и PNG", "info"); }
         persist(); closeSheet(); render(true); toast("Фото добавлено", "camera"); });
       inp.click(); },
+    avaForm: el => { const f = el.closest("form"), inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
+      inp.addEventListener("change", async () => { const file = inp.files[0]; if (!file) return;
+        try { setAvaField(f, await avatarImage(file)); } catch (e) { toast("Не удалось открыть фото — подойдут JPG и PNG", "info"); } });
+      inp.click(); },
+    avaFormDel: el => setAvaField(el.closest("form"), "-"),
     avaDel: el => { const s = DB.students.find(x => x.id === el.dataset.id); if (s) delete s.ava; persist(); closeSheet(); render(true); toast("Фото убрано", "camera"); },
     // фото всей группы разом: файл называется по фамилии или ФИО — «Иванов.jpg», «Петрова Анна.png»
     avaMany: () => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.multiple = true;

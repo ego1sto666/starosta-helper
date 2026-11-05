@@ -123,14 +123,19 @@ NNTU-Map). Официальной документации нет: если НГ
 Прежняя версия на Python + Kivy больше не развивается. Её код лежит в архиве
 `docs/архив — программа для ПК (Kivy).zip`.
 
-## Шрифты
-Из набора Material Design Icons (1,3 МБ) в `assets/icons.woff2` попадают только значки, которые есть в таблице
-`ICON` в `js/app.js`, — около 4 КБ. Roboto урезан до латиницы и кириллицы. Добавили новый значок — пересоберите:
+## Оформление и шрифты
+- Текст — **Onest** (сделан под кириллицу), крупные цифры и приветствие — **Unbounded**. Оба переменные:
+  любая толщина в одном файле, кириллица и латиница — отдельными файлами в `assets/`.
+- Значки — **Phosphor Icons**: тонкие линии, у активного пункта меню — залитые. Из полного набора (0,5 МБ)
+  в `assets/icons.woff2` и `assets/icons-fill.woff2` попадают только значки из таблицы `ICON` в `js/app.js`, — по 6–8 КБ.
+  Имена и коды значков — в `tools/fonts/phosphor-names.json`, все значки — на phosphoricons.com.
+  Добавили значок — пересоберите:
 ```
 pip install fonttools brotli
 python tools/subset_fonts.py
 ```
+- Смена экранов — плавный переход (View Transitions), листы выезжают снизу; при «Уменьшить движение» в системе анимации выключаются.
 
 ## Сторонние ресурсы
-- Material Design Icons (`tools/fonts/materialdesignicons-webfont.ttf`) — лицензия Apache 2.0.
-- Шрифт Roboto (`tools/fonts/Roboto-*.ttf`) — лицензия Apache 2.0.
+- Phosphor Icons (`tools/fonts/Phosphor*.ttf`) — лицензия MIT.
+- Шрифты Onest и Unbounded (`assets/onest-*.woff2`, `assets/unbounded-*.woff2`) — лицензия SIL Open Font License 1.1.
