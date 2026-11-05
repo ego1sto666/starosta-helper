@@ -78,6 +78,11 @@
   /* ================= ДАННЫЕ ================= */
   let DB = null;             // все данные группы (формат data.json)
   const DATA_KEY = "starosta.data";
+  // пример для гостей сайта: список и расписание группы 26-ИВТ-2-1, отметки расставляются случайно
+  const DEMO_URL = "demo/group.json";
+  // ссылка на Google Форму с отзывами; пока пусто — кнопки «Оценить» не показываются
+  const FEEDBACK_URL = "";
+  const isDemo = () => !!(DB && DB.settings.demo);
 
   // недостающие поля — как Store._load в main.py
   function normalize(d) {
@@ -119,7 +124,7 @@
   // давно не скачивали копию — напомнить (данные живут только в этом браузере)
   const BACKUP_DAYS = 14;
   function needBackup() {
-    if (!DB || !Object.keys(DB.attendance).length) return false;
+    if (!DB || isDemo() || !Object.keys(DB.attendance).length) return false;
     const last = store.get("lastBackup", 0);
     return !last || Date.now() - last > BACKUP_DAYS * DAY;
   }
@@ -1298,12 +1303,51 @@
                   : `<button class="btn btn--soft btn--sm" data-act="form" data-f="pin">${ic("lock")}Включить</button>`)}
               ${row("Установить", "Иконка на рабочем столе или главном экране, работает без интернета. Долгое нажатие на иконку — быстрые действия", `<button class="btn btn--primary btn--sm" data-act="install">Установить</button>`)}
               ${row("Как пользоваться", "Короткая инструкция: с чего начать и что умеет приложение", `<a class="btn btn--neutral btn--sm" href="#help">${ic("help")}Открыть</a>`)}
+              ${FEEDBACK_URL ? row("Оценить приложение", "Короткая анкета: что нравится, что неудобно, чего не хватает", feedbackBtn("btn btn--soft btn--sm")) : ""}
+              ${isDemo() ? row("Пример", "Сейчас открыт пример со случайными отметками", `<button class="btn btn--neutral btn--sm" data-act="demoExit">Выйти</button>`) : ""}
               ${row("О приложении", "Неофициальный помощник для старост НГТУ им. Р. Е. Алексеева. Расписание берётся с открытого сайта НГТУ.")}
             </section>
           </div>
         </div>`,
     };
   };
+
+  /* ----- пример для гостей ----- */
+  // отметки с начала семестра по сегодня, а ещё дела, сдачи, касса, сессия и событие — даты от сегодняшнего дня
+  function demoFill() {
+    const R = Math.random, cur = semInfo(TODAY), day = n => key(addDays(TODAY, n));
+    DB.lessons.forEach(l => { l.sem = cur.num; });
+    const ids = students().map(s => s.id), some = share => ids.filter(() => R() < share);
+    // у каждого своя привычка: большинство ходит почти всегда, несколько человек — с пропусками
+    const habit = Object.fromEntries(ids.map(id => [id, R() < 0.1 ? 0.6 + R() * 0.15 : 0.86 + R() * 0.13]));
+    const [start, end] = semesterDates(academicYear(TODAY))[cur.num - 1];
+    for (let d = start; d <= TODAY && d <= end; d = addDays(d, 1))
+      lessonsOn(d).forEach(l => {
+        if (lessonState(l, d) !== "past") return;
+        const marks = {};
+        roster(l.subject)[0].forEach(s => { marks[s.id] = R() < habit[s.id] ? "+" : R() < 0.3 ? "у" : "н"; });
+        DB.attendance[attKey(d, l.id)] = { subject: l.subject, num: l.num || 0, kind: l.kind || "", marks };
+      });
+    const created = Math.floor(Date.now() / 1000), map = list => Object.fromEntries(list.map(id => [id, 1]));
+    DB.tasks = [
+      { id: newId(), kind: "Дедлайн", title: "Отчёт по лабораторной №3", subject: "Программирование", due: day(4), text: "", done: false, created },
+      { id: newId(), kind: "Объявление", title: "Собрание группы после 3-й пары", subject: "", due: day(1), text: "Обсудим посвящение и сбор денег", done: false, created },
+    ];
+    DB.works = [
+      { id: newId(), title: "Лабораторная №2", subject: "Информатика", due: day(-2), created: Date.now(), done: map(some(0.8)) },
+      { id: newId(), title: "Реферат", subject: "История России", due: day(6), created: Date.now(), done: map(some(0.3)) },
+    ];
+    DB.funds = [{ id: newId(), title: "Подарок куратору", amount: 200, due: day(5), created: Date.now(), paid: map(some(0.6)) }];
+    DB.exams = [
+      { id: newId(), subject: "Информатика", kind: "Зачёт", date: key(addDays(end, -6)), time: "09:45", room: "", teacher: "", note: "" },
+      { id: newId(), subject: "Математика", kind: "Консультация", date: key(addDays(end, 12)), time: "11:35", room: "", teacher: "", note: "" },
+      { id: newId(), subject: "Математика", kind: "Экзамен", date: key(addDays(end, 13)), time: "09:00", room: "", teacher: "", note: "Взять зачётку" },
+    ];
+    DB.events = [{ id: newId(), title: "Посвящение в студенты", kind: "Праздник", date: day(7), time: "18:00", place: "Актовый зал", text: "", going: some(0.45) }];
+  }
+  const feedbackBtn = (cls = "btn btn--primary btn--sm") => FEEDBACK_URL ? `<a class="${cls}" href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">${ic("star")}Оценить</a>` : "";
+  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Пример.</b> Список и расписание группы 26-ИВТ-2-1 настоящие, отметки посещаемости расставлены случайно.</span>
+    <div class="btn-row">${feedbackBtn()}<button class="btn btn--soft btn--sm" data-act="demoExit">Своя группа</button></div></div>`;
 
   /* ----- первый запуск ----- */
   function welcomeScreen() {
@@ -1314,10 +1358,16 @@
         <section class="hero"><h1>Помощник старосты.<span> Вся группа под рукой.</span></h1>
           <p>Расписание, посещаемость и дела группы НГТУ — в браузере на телефоне и компьютере. Данные хранятся только на этом устройстве.</p></section>
         <section class="card welcome__card">
+          <div class="card__head">${ic("chart")}<h3>Просто посмотреть</h3></div>
+          <p class="muted" style="font-size:14px;margin-bottom:12px">Пример с группой 26-ИВТ-2-1: настоящее расписание и список, посещаемость за семестр расставлена случайно.</p>
+          <button class="btn btn--primary btn--block btn--lg" data-act="demo">Открыть пример</button>
+          ${FEEDBACK_URL ? `<p class="hint" style="margin-top:10px">Понравилось или нет — <a href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">оцените сайт</a></p>` : ""}
+        </section>
+        <section class="card welcome__card">
           <div class="card__head">${ic("school")}<h3>Ваша группа</h3></div>
           <form data-form="welcome">
             ${field("Номер группы в НГТУ", `<input name="group" required list="nntuGroups" autocomplete="off" autocapitalize="characters" placeholder="26-ИВТ-2-1"><datalist id="nntuGroups"></datalist>`)}
-            ${formErr}<button class="btn btn--primary btn--block btn--lg">${ic("download")}Загрузить расписание</button>
+            ${formErr}<button class="btn btn--soft btn--block btn--lg">${ic("download")}Загрузить расписание</button>
           </form>
           <p class="hint" style="text-align:left;margin-top:10px">Пары, аудитории и преподаватели подтянутся с сайта НГТУ. Студентов добавите потом во вкладке «Группа».</p>
         </section>
@@ -1364,12 +1414,14 @@
     return l ? `#mark/${l.id}/${key(TODAY)}` : "#journal";
   }
   function render(keepScroll) {
+    // #demo — прямая ссылка на пример для гостей
+    if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (!isDemo()) { ACT.demo(); if (!DB) return; } }
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");
     if (name !== "mark") MK = null;
     current = LOCKED ? lockScreen() : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen();
     renderTopbar(current); renderNav(current.nav || name);
-    view.innerHTML = current.html;
+    view.innerHTML = (isDemo() && !LOCKED && !current.focus ? demoStrip() : "") + current.html;
     app.classList.toggle("is-focus", !!current.focus);
     app.classList.toggle("is-welcome", !!current.welcome);
     fab.hidden = !current.fab; fab.dataset.kind = current.fab || "";
@@ -2117,6 +2169,24 @@
       closeSheet(); toast(`Данные загружены: студентов ${DB.students.length}, пар ${DB.lessons.length}`); render();
     },
     startEmpty: () => { setDB({}); render(); toast("Начнём: добавьте студентов и пары"); },
+    demo: () => {
+      // свои данные в этом браузере молча не заменяем
+      if (DB && !isDemo() && (DB.students.length || Object.keys(DB.attendance).length)) return openSheet(FORMS.confirm("Открыть пример вместо ваших данных?", "demoApply", "", "Открыть пример"));
+      ACT.demoApply();
+    },
+    demoApply: async () => {
+      closeSheet();
+      let d;
+      try { const r = await fetch(DEMO_URL, { cache: "no-cache" }); if (!r.ok) throw new Error(r.status); d = await r.json(); }
+      catch (e) { toast("Не удалось загрузить пример. Проверьте интернет", "wifioff"); render(); return; }
+      DB = normalize(d); demoFill(); setDB(DB);
+      if (location.hash !== "#home") location.hash = "#home"; else render();
+      toast(`Пример открыт: ${DB.students.length} студентов, отметки случайные`);
+    },
+    demoExit: () => {
+      try { localStorage.removeItem(DATA_KEY); } catch (e) { /* ничего */ }
+      DB = null; MK = null; location.hash = ""; render();
+    },
     nntuApply: () => {
       if (PLAN && !PLAN.empty) { nntuApply(PLAN); toast("Расписание обновлено"); }
       else if (PLAN) { DB.settings.nntu_group = PLAN.group; DB.settings.nntu_synced = key(TODAY); persist(); }

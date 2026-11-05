@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><title>demo.html</title>
+<body style="margin:0"><iframe id="f" style="width:400px;height:900px;border:0"></iframe>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const F = () => document.getElementById("f"), W = () => F().contentWindow, D = () => F().contentDocument;
+async function until(fn, ms = 5000, what = "") { const t = Date.now(); while (Date.now() - t < ms) { try { const v = fn(); if (v) return v; } catch (e) {} await sleep(100); } throw new Error("timeout: " + what); }
+async function load(hash = "#home") {
+  F().src = "/index.html?r=" + Math.random() + hash;
+  await new Promise(r => F().onload = r);
+  W().addEventListener("error", e => errors.push(e.message + " @" + e.lineno));
+  W().addEventListener("unhandledrejection", e => errors.push("promise: " + (e.reason && e.reason.message)));
+  await until(() => D().querySelector("#view").children.length && !D().querySelector('[aria-busy="true"]'), 8000, "render");
+  await sleep(500);
+}
+const $ = s => D().querySelector(s), $$ = s => [...D().querySelectorAll(s)];
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data"));
+const go = async h => { W().location.hash = h; await sleep(350); };
+
+async function run() {
+  localStorage.clear();
+  // 1. первый запуск: кнопка примера
+  await load("");
+  log("1 welcome demo btn:", !!$('[data-act="demo"]'));
+  $('[data-act="demo"]').click();
+  await until(() => data() && data().settings.demo, 5000, "demo loaded"); await sleep(400);
+  const d = data(), recs = Object.values(d.attendance), marks = recs.flatMap(r => Object.values(r.marks));
+  const cnt = v => marks.filter(m => m === v).length;
+  log("1 students:", d.students.length, "| lessons:", d.lessons.length, "| records:", recs.length, "| hash:", W().location.hash);
+  log("1 marks + / н / у:", cnt("+"), cnt("н"), cnt("у"), "| all marked:", marks.length > 0 && marks.every(m => "+ну".includes(m)));
+  log("1 tasks/works/funds/exams/events:", [d.tasks, d.works, d.funds, d.exams, d.events].map(a => a.length).join("/"));
+  log("1 strip on home:", !!$(".demo-strip"), "| backup tip hidden:", !$('.tip [data-act="exportJson"]'));
+  // подгрупповые пары — только своя подгруппа
+  const sgRec = recs.find(r => /подгруппа 1/.test(r.subject));
+  log("1 subgroup roster size:", sgRec ? Object.keys(sgRec.marks).length : "нет пар", "из", d.students.length);
+  // 2. экраны с плашкой
+  for (const h of ["#journal", "#group", "#stats", "#tasks", "#settings"]) { await go(h); log("2", h, "strip:", !!$(".demo-strip"), "| view:", $("#view").innerText.length > 50); }
+  await go("#stats"); log("2 stats text:", ($("#view").innerText.match(/\d+\s?%/) || ["нет %"])[0]);
+  // 3. перезагрузка — пример остаётся, отметки те же
+  await load(); log("3 after reload demo:", data().settings.demo, "| same records:", Object.keys(data().attendance).length === recs.length);
+  // 4. «Своя группа» — выход из примера
+  $('.demo-strip [data-act="demoExit"]').click(); await sleep(400);
+  log("4 exit: data:", W().localStorage.getItem("starosta.data"), "| welcome:", !!$('[data-act="demo"]'));
+  // 5. ссылка #demo в пустом браузере
+  await load("#demo"); await until(() => data() && data().settings.demo, 5000, "#demo");
+  await sleep(300); log("5 #demo link:", data().students.length, "| hash:", W().location.hash);
+  // 6. свои данные: #demo не заменяет молча
+  const own = await (await fetch("/__t/fixtures/demo.json")).json();
+  W().localStorage.setItem("starosta.data", JSON.stringify(own));
+  await load("#demo"); await sleep(300);
+  log("6 own data kept:", !data().settings.demo, "| confirm sheet:", !$("#sheet").hidden && !!$('#sheet [data-act="demoApply"]'));
+  log("ERRORS:", errors.join(" | ") || "нет");
+}
+run().catch(e => log("FAIL", e.message, errors.join(" | "))).finally(() => fetch("/__save/result-demo.txt", { method: "POST", body: R.join("\n") }));
+</script>

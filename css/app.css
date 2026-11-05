@@ -95,6 +95,13 @@ a { color: inherit; text-decoration: none; }
 .tip__body span { font-size: var(--fs-meta); color: var(--muted-ink); }
 .tip .btn { flex: none; }
 
+/* ---------- плашка примера для гостей ---------- */
+.demo-strip { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 4px 0 14px; padding: 10px 14px;
+  background: var(--primary-soft); color: var(--text); border-radius: 16px; font-size: var(--fs-meta); line-height: 1.35; }
+.demo-strip > .mdi { font-size: 20px; color: var(--primary-ink); flex: none; }
+.demo-strip > span { flex: 1 1 220px; min-width: 0; }
+.demo-strip .btn-row { flex: none; flex-wrap: nowrap; margin-left: auto; }
+
 /* ---------- первый запуск ---------- */
 .app.is-welcome .nav, .app.is-welcome .topbar, .app.is-welcome .fab { display: none; }
 .app.is-welcome { display: block; }
