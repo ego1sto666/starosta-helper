@@ -1809,10 +1809,34 @@
 
   // «Учёба» и «Внеучебка» открываются на той вкладке, где были в прошлый раз
   const navHref = id => id === "study" ? `#study/${S.studyView}` : id === "tasks" ? (S.tasksView === "docs" ? "#tasks/docs" : (EXTRA_VIEWS.find(v => v[0] === S.tasksView) || EXTRA_VIEWS[0])[2]) : `#${id}`;
+  // счётчики у пунктов меню: неотмеченные пары сегодня, просроченные и сегодняшние дела
+  function navBadges() {
+    if (!DB || LOCKED) return {};
+    const todo = activeOnly(dayLessons(TODAY)).filter(l => lessonState(l, TODAY) !== "future" && !DB.attendance[attKey(TODAY, l.id)]).length;
+    const urgent = DB.tasks.filter(t => { const d = !t.done && parseISO(t.due); return d && d <= TODAY; }).length;
+    return { journal: [todo, `Не отмечено пар сегодня: ${todo}`], tasks: [urgent, `Дел на сегодня и просроченных: ${urgent}`] };
+  }
+  // карточка «Идёт сейчас / Дальше» в боковой панели (только на ПК)
+  function navNow() {
+    if (!DB || LOCKED) return "";
+    const ls = activeOnly(dayLessons(TODAY)), live = ls.find(l => lessonState(l, TODAY) === "live"), next = ls.find(l => lessonState(l, TODAY) === "future" && lessonSpan(l)[0]);
+    const l = live || next; if (!l) return "";
+    const [b, e] = lessonSpan(l), p = live ? Math.round((nowMin() - toMin(b)) / (toMin(e) - toMin(b)) * 100) : 0;
+    return `<a class="nav__now${live ? " is-live" : ""}" href="#mark/${esc(l.id)}/${key(TODAY)}" title="Открыть отметку">
+      <span class="nav__now-label">${live ? `<span class="pulse"></span>Идёт · до ${e}` : `${ic("clock")}Дальше · ${b}`}</span>
+      <b>${esc(baseSubject(l.subject))}</b>${l.room ? `<small>${ic("door")}${esc(l.room)}</small>` : ""}
+      ${live ? `<span class="nav__now-bar" role="img" aria-label="Прошло ${p}%"><i style="width:${p}%"></i></span>` : ""}</a>`;
+  }
   function renderNav(active) {
-    nav.innerHTML = `<a class="nav__brand" href="#home"><span class="brand__logo">${ic("school")}</span>Помощник<br>старосты</a>` +
-      NAV.map(([id, n, i]) => `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""}>${ic(i)}<span>${n}</span></a>`).join("") +
-      `<a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""}>${ic("cog")}<span>Настройки</span></a>`;
+    const badges = navBadges(), head = DB && !LOCKED && DB.students.find(s => s.role === "head");
+    nav.innerHTML = `<a class="nav__brand" href="#home" title="Помощник старосты"><span class="brand__logo">${ic("school")}</span>
+        <span class="nav__brand-text"><b>Помощник старосты</b><small>${esc(DB && !LOCKED ? groupName() : "НГТУ")}</small></span></a>
+      <div class="nav__items">` +
+      NAV.map(([id, n, i]) => { const [cnt, hint] = badges[id] || [];
+        return `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""} title="${n}${cnt ? ` — ${hint}` : ""}">${ic(i)}<span>${n}</span>${cnt ? `<em class="nav__badge" aria-label="${hint}">${cnt > 9 ? "9+" : cnt}</em>` : ""}</a>`; }).join("") +
+      `</div>${navNow()}
+      <div class="nav__foot">${head ? `<a class="nav__me" href="#student/${esc(head.id)}" title="${esc(head.name)}">${avatar(head)}<span class="nav__me-text"><b>${esc(shortName(head.name))}</b><small>Староста</small></span></a>` : ""}
+        <a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""} title="Настройки">${ic("cog")}<span>Настройки</span></a></div>`;
   }
   function renderTopbar(scr) {
     const acts = (scr.actions || []).map(([i, label, act, arg, arg2]) => act === "go"
