@@ -58,12 +58,17 @@
   const pctColor = p => (p >= 85 ? "var(--here)" : p >= 70 ? "var(--warn)" : "var(--absent)");
   const pctInk = p => (p >= 85 ? "var(--ok-ink)" : p >= 70 ? "var(--warn-ink)" : "var(--bad-ink)");
   const initials = n => (n || "?").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
-  function avatar(name, cls = "") {
+  // p — студент (с фото в p.ava) или просто имя
+  function avatar(p, cls = "") {
+    const name = typeof p === "string" ? p : (p && p.name) || "";
+    if (p && p.ava) return `<span class="avatar avatar--img ${cls}" aria-hidden="true"><img src="${esc(p.ava)}" alt="" decoding="async"></span>`;
     const i = accentIndex(name), hex = ACCENT_HEX[i];
     const [r, g, b] = [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16) / 255);
     const fg = 0.299 * r + 0.587 * g + 0.114 * b > 0.66 ? "#1A1A1A" : "#fff";
     return `<span class="avatar ${cls}" style="--c:var(--accent-${i});--fg:${fg}" aria-hidden="true">${esc(initials(name))}</span>`;
   }
+  // список для чата: каждый с новой строки и с номером — так удобнее читать и считать
+  const nameList = names => names.map((n, i) => `${i + 1}. ${n}`).join("\n");
   const shortName = n => { const p = (n || "").split(/\s+/); return p.length >= 2 ? `${p[0]} ${p[1][0]}.` : n; };
   const nameKey = n => (n || "").toLowerCase().replace(/ё/g, "е");
   const byName = (a, b) => nameKey(a.name).localeCompare(nameKey(b.name), "ru");
@@ -91,7 +96,7 @@
     d.settings ??= {};
     d.settings.group ??= "";
     if (!Array.isArray(d.settings.bells) || !d.settings.bells.length) d.settings.bells = ["08:00-09:35", "09:45-11:20", "11:35-13:10", "13:40-15:15", "15:25-17:00"];
-    // works — сдачи работ, funds — касса, exams — сессия, sick — больничные
+    // works — сдачи работ, funds — сборы денег, docs — документы, exams — сессия, sick — больничные
     for (const k of ["students", "teachers", "lessons", "tasks", "events", "works", "funds", "exams", "sick", "docs", "polls", "templates"]) if (!Array.isArray(d[k])) d[k] = [];
     if (!d.attendance || typeof d.attendance !== "object") d.attendance = {};
     // изменения на конкретные даты: "YYYY-MM-DD|id пары" → { cancel, moved_to, room, teacher, src: manual|nntu }
@@ -277,7 +282,7 @@
   /* ---------- состояние экрана ---------- */
   const S = { journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
     groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
-    tasksView: "tasks", studyView: "works", worksDone: false, examsPast: false, docsDone: false, pollsClosed: false, gradesFilter: "" };
+    tasksView: "tasks", studyView: "works", worksDone: false, examsPast: false, pollsClosed: false, gradesFilter: "" };
 
   /* ---------- общие куски разметки ---------- */
   function donut(parts, size, w, center, label, anim = true) {
@@ -435,6 +440,14 @@
     const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
     return new Promise(res => c.toBlob(res, "image/jpeg", 0.82));
+  }
+
+  async function avatarImage(file, px = 160) {
+    const img = await createImageBitmap(file), side = Math.min(img.width, img.height);
+    const x = (img.width - side) / 2, y = (img.height - side) * 0.3;
+    const c = document.createElement("canvas"); c.width = c.height = px;
+    c.getContext("2d").drawImage(img, x, y, side, side, 0, 0, px, px);
+    return c.toDataURL("image/jpeg", 0.82);
   }
 
   /* ---------- риск недопуска: процент по предмету ниже порога ---------- */
@@ -670,7 +683,7 @@
         ${soon.length ? `<div class="mini">${soon.slice(0, 3).map(e => `<a class="mini__row" href="#events"><span class="badge" style="--c:${eventKind(e).c}">${ic(eventKind(e).i)}</span><div class="mini__body"><div class="mini__title">${esc(e.title)}</div><div class="mini__sub">${fmtShort(eventDate(e))}${e.time ? " · " + esc(e.time) : ""}</div></div></a>`).join("")}</div>`
           : `<p class="muted" style="font-size:14px">В ближайшие две недели событий нет.</p>`}</section>
       ${bdays.length ? `<section class="card"><div class="card__head">${ic("cake")}<h3>Дни рождения</h3></div>
-        <div class="mini">${bdays.map(x => `<a class="mini__row" href="#student/${esc(x.s.id)}">${avatar(x.s.name)}<div class="mini__body"><div class="mini__title">${esc(x.s.name)}</div><div class="mini__sub">${fmtDate(x.d)} · ${whenText(x.n)}</div></div></a>`).join("")}</div></section>` : ""}`;
+        <div class="mini">${bdays.map(x => `<a class="mini__row" href="#student/${esc(x.s.id)}">${avatar(x.s)}<div class="mini__body"><div class="mini__title">${esc(x.s.name)}</div><div class="mini__sub">${fmtDate(x.d)} · ${whenText(x.n)}</div></div></a>`).join("")}</div></section>` : ""}`;
 
     const bToday = upcomingBdays(0), risk = riskList();
     const exam = DB.exams.filter(x => parseISO(x.date) >= TODAY).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))[0];
@@ -799,7 +812,7 @@
   function markRow(s, v) {
     const [ch, word] = MARK_TXT[v] || ["—", "нет отметки"];
     return `<button class="card card--tap person mark" data-act="mark" data-id="${esc(s.id)}" data-s="${v === "н" ? "H" : v === "у" ? "U" : v === "+" ? "+" : "-"}" aria-label="${esc(s.name)}: ${word}">
-      ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div><div class="person__meta mark__state">${v === "+" ? "" : word}</div></div>
+      ${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div><div class="person__meta mark__state">${v === "+" ? "" : word}</div></div>
       <span class="mark__chip" aria-hidden="true">${ch}</span></button>`;
   }
   const markTally = () => summarize(MK.rec, MK.list);
@@ -860,7 +873,7 @@
     const ill = sickOn(s.id, TODAY);
     const meta = [!inGroup(s) ? `<span style="color:var(--${s.status === "expelled" ? "bad" : "warn"}-ink);font-weight:var(--fw-bold)">${statusText(s)}</span>` : "", role, ill ? `<span style="color:var(--excused-ink)">${ic("sick")} на больничном до ${fmtDate(parseISO(ill.to))}</span>` : "", s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
     return `<a class="list__row" href="#student/${esc(s.id)}" data-search="${esc(nameKey(s.name + " " + (s.phone || "")))}">
-      ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>${meta ? `<div class="person__meta">${meta}</div>` : ""}</div>${ic("right", "list__chev")}</a>`;
+      ${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>${meta ? `<div class="person__meta">${meta}</div>` : ""}</div>${ic("right", "list__chev")}</a>`;
   }
   function teacherCard(t) {
     const subs = teacherSubjects(t);
@@ -900,7 +913,7 @@
     const manual = new Set(DB.settings.own_split || []), mainN = mainCount(counts);
     const canOwn = Object.keys(counts).filter(x => !own.includes(x));
     const chip = s => { const n = num(s); return `<button class="sgchip${n ? "" : " sgchip--none"}" style="--c:${n ? sgColor(n) : "var(--muted)"}" data-act="sgCycle" data-id="${esc(s.id)}" aria-label="${esc(s.name)}: ${n ? n + "-я подгруппа" : "без подгруппы"}. Нажмите, чтобы сменить">${n || "—"}</button>`; };
-    const row = s => { const n = num(s); return `<div class="card person${n ? " person--sg" : ""}" style="--accent:${n ? sgColor(n) : "transparent"}" draggable="true" data-drag="${esc(s.id)}">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div></div>${chip(s)}</div>`; };
+    const row = s => { const n = num(s); return `<div class="card person${n ? " person--sg" : ""}" style="--accent:${n ? sgColor(n) : "transparent"}" draggable="true" data-drag="${esc(s.id)}">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div></div>${chip(s)}</div>`; };
     const boards = [...Array.from({ length: N }, (_, i) => i + 1), 0].map(n => {
       const ls = list.filter(s => num(s) === n);
       return `<section class="board" style="--c:${n ? sgColor(n) : "var(--muted)"}" data-drop="${n}" aria-label="${n ? n + "-я подгруппа" : "Без подгруппы"}">
@@ -1057,13 +1070,13 @@
         if (S.statsPeriod !== "term" || S.statsSubject) return "";
         const rl = riskList();
         return `${sectionHead("risk", `Риск недопуска. Ниже ${risk}% по предмету`, `<button class="link" data-act="form" data-f="risk">Порог</button>`)}
-          ${rl.length ? `<div class="card list list--cols">${rl.map(({ s, subs }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
+          ${rl.length ? `<div class="card list list--cols">${rl.map(({ s, subs }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
             <div class="person__meta">${subs.map(x => `<span class="chip chip--clip" style="--c:var(--bad)" title="${esc(x.subj)} · ${x.pct}%">${esc(x.subj)} · ${x.pct}%</span>`).join("")}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>`
             : `<p class="muted" style="font-size:14px">Никого — у всех посещаемость по предметам не ниже ${risk}%.</p>`}`; })()}
       ${sectionHead("group", "Студенты. Сначала отстающие", low ? `<span class="pill pill--bad">${low} ниже ${risk}%</span>` : "")}
       <p class="hint" style="text-align:left">Засечка на полосе — порог ${risk}%. Нажмите на студента, чтобы открыть его пропуски.</p>
       <div class="card list list--cols">${list.map(({ s, p, abs, exc }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">
-        ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b class="num" style="color:${pctInk(p)}">${p}%</b></div>
+        ${avatar(s)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b class="num" style="color:${pctInk(p)}">${p}%</b></div>
         <div style="margin:6px 0 4px">${barMark(p, pctColor(p), risk, `порог ${risk}%`)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}${!inGroup(s) ? ` · ${statusText(s)}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
   };
 
@@ -1167,7 +1180,7 @@
       title: "Студент", sub: !inGroup(s) ? statusText(s) : (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
       actions: [["edit", "Редактировать", "form", "student", s.id]],
       html: `
-        <section class="card profile">${avatar(s.name, "avatar--lg")}<div style="min-width:0"><h2>${esc(s.name)}</h2>
+        <section class="card profile"><button class="ava-pick" data-act="avaMenu" data-id="${esc(s.id)}" aria-label="${s.ava ? "Фото студента" : "Добавить фото"}" title="${s.ava ? "Сменить или убрать фото" : "Добавить фото"}">${avatar(s, "avatar--lg")}<span class="ava-pick__badge">${ic("camera")}</span></button><div style="min-width:0"><h2>${esc(s.name)}</h2>
           <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${illNow ? `<span style="color:var(--excused-ink);font-weight:var(--fw-bold)">${ic("sick")} на больничном до ${fmtDate(parseISO(illNow.to))}</span>` : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${s.email ? `<a href="mailto:${esc(s.email)}">${ic("email")} ${esc(s.email)}</a>` : ""}${s.telegram ? `<a href="https://t.me/${esc(s.telegram.replace(/^\+/, "+"))}" target="_blank" rel="noopener">${ic("telegram")} ${esc(tgLabel(s.telegram))}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
         ${statusCard(s)}
         ${gradesCard(s)}
@@ -1189,11 +1202,11 @@
     };
   };
 
-  /* ----- Учёба (сдачи работ, сессия) и внеучебка (дела, касса, события) ----- */
+  /* ----- Учёба (сдачи работ, сессия) и внеучебка (дела, сборы, события, опросы) ----- */
   const STUDY_VIEWS = [["works", "Сдачи", "#study/works"], ["exams", "Сессия", "#study/exams"], ["grades", "Оценки", "#study/grades"]];
-  const EXTRA_VIEWS = [["tasks", "Дела", "#tasks"], ["docs", "Справки", "#tasks/docs"], ["funds", "Касса", "#tasks/funds"], ["events", "События", "#events"], ["polls", "Опросы", "#tasks/polls"]];
+  const EXTRA_VIEWS = [["tasks", "Дела", "#tasks"], ["funds", "Сборы", "#tasks/funds"], ["events", "События", "#events"], ["polls", "Опросы", "#tasks/polls"]];
   const viewTabs = (views, cur) => `<div class="seg seg--fit${views.length > 4 ? " seg--many" : ""}" role="tablist" aria-label="Раздел">${views.map(([v, n, h]) => `<button role="tab" aria-selected="${cur === v}" data-go="${h}">${n}</button>`).join("")}</div>`;
-  const studyTabs = () => viewTabs(STUDY_VIEWS, S.studyView), extraTabs = () => viewTabs(EXTRA_VIEWS, S.tasksView);
+  const studyTabs = () => viewTabs(STUDY_VIEWS, S.studyView), extraTabs = () => viewTabs(EXTRA_VIEWS, S.tasksView === "docs" ? "funds" : S.tasksView);
   const rub = n => `${(+n || 0).toLocaleString("ru-RU")} ₽`;
   // кто должен сдать работу (с учётом подгруппы предмета) и кто — деньги (вся группа)
   const checkList = (kind, it) => kind === "works" && it.subject ? roster(it.subject)[0] : students();
@@ -1255,7 +1268,10 @@
     };
   }
 
-  /* ----- Касса группы: сборы денег ----- */
+  /* ----- Сборы: деньги и документы в деканат — кто сдал ----- */
+  const collectOpen = (kind, arr) => arr.filter(x => { const st = checkStats(kind, x); return st.left.length || !st.list.length; }).length;
+  const collectKinds = () => `<div class="filter" role="tablist" aria-label="Что собираем">${[["funds", "cash", "Деньги", DB.funds], ["docs", "doc", "Документы", DB.docs]].map(([k, i, n, arr]) => {
+    const open = collectOpen(k, arr); return `<button role="tab" aria-pressed="${S.tasksView === k}" data-go="#tasks/${k}">${ic(i)}${n}${open ? ` · ${open}` : ""}</button>`; }).join("")}</div>`;
   function fundsScreen() {
     const all = DB.funds.map(f => ({ f, ...checkStats("funds", f) })).sort((a, b) => (b.f.created || 0) - (a.f.created || 0));
     const card = ({ f, list, ok, left }) => `<a class="card card--tap work" href="#check/funds/${esc(f.id)}">
@@ -1265,8 +1281,8 @@
       <div class="work__foot"><span class="muted">сдали ${ok} из ${list.length}</span>${left.length ? `<span class="muted">ждём: ${left.length}</span>` : `<span style="color:var(--ok-ink)">${ic("tick")} собрано</span>`}</div></a>`;
     const total = all.reduce((a, x) => a + x.ok * (+x.f.amount || 0), 0);
     return {
-      title: "Касса", sub: all.length ? `собрано всего ${rub(total)}` : "сборы денег группы", nav: "tasks", fab: "fund",
-      html: `${extraTabs()}
+      title: "Сборы", sub: all.length ? `деньги · собрано всего ${rub(total)}` : "деньги и документы", nav: "tasks", fab: "fund",
+      html: `${extraTabs()}${collectKinds()}
         ${all.length ? `<div class="grid grid--cols">${all.map(card).join("")}</div>`
           : empty("cash", "Сборов пока нет", "Нажмите «+», чтобы начать сбор: на подарок, распечатки, мероприятие. Отмечайте, кто сдал, — сумма посчитается сама.")}`,
     };
@@ -1303,7 +1319,7 @@
     if (!it) return { title: "Не найдено", back, nav: navId, html: empty(C.icon, "", "Возможно, запись удалили.") };
     const { list, ok, left } = checkStats(kind, it), m = checkMap(kind, it);
     const verb = C.verb;
-    const text = left.length ? `${it.title}${isW && it.subject ? ` (${baseSubject(it.subject)})` : ""}${isF ? ` — по ${rub(it.amount)}` : ""}${kind === "docs" && it.note ? ` (${it.note})` : ""}${it.due ? `, срок ${fmtDate(parseISO(it.due))}` : ""}.\nЕщё не ${verb}: ${left.map(s => s.name).join(", ")}.`
+    const text = left.length ? `${it.title}${isW && it.subject ? ` (${baseSubject(it.subject)})` : ""}${isF ? ` — по ${rub(it.amount)}` : ""}${kind === "docs" && it.note ? ` (${it.note})` : ""}${it.due ? `, срок ${fmtDate(parseISO(it.due))}` : ""}.\nЕщё не ${verb}:\n${nameList(left.map(s => s.name))}`
       : `${it.title}: ${isF ? "все сдали, спасибо" : "сдали все"}!`;
     return {
       title: it.title, sub: `${isW ? (it.subject || "работа") : isF ? `по ${rub(it.amount)} с человека` : (it.note || "документ")} · ${verb} ${ok} из ${list.length}`, back, nav: navId, focus: true,
@@ -1313,7 +1329,7 @@
         <div class="card markbar" style="display:flex">${donut([{ v: ok, c: "var(--here)" }, { v: list.length - ok, c: "var(--track)" }], 44, 7, "", `${ok} из ${list.length}`, false)}
           <div class="markbar__count num">${isF ? rub(ok * (+it.amount || 0)) : ok}<small> ${isF ? `из ${rub(list.length * (+it.amount || 0))}` : `из ${list.length}`}</small></div></div>
         <p class="hint">Нажмите на студента: ${ic("tick")} — ${C.one}, ещё раз — снять отметку</p>
-        ${list.length ? `<div class="grid mark-list">${list.map(s => toggleRow("checkToggle", `data-k="${kind}" data-i="${esc(it.id)}" data-id="${esc(s.id)}"`, s.name, !!m[s.id])).join("")}</div>`
+        ${list.length ? `<div class="grid mark-list">${list.map(s => toggleRow("checkToggle", `data-k="${kind}" data-i="${esc(it.id)}" data-id="${esc(s.id)}"`, s, !!m[s.id])).join("")}</div>`
           : empty("group", "", "В группе пока нет студентов. Добавьте их во вкладке «Группа».")}
         <div class="btn-row only-wide" style="margin-top:12px"><button class="btn btn--ok" data-act="checkAll" data-k="${kind}" data-id="${esc(it.id)}">${ic("tick")}Отметить всех</button>${copyBtn(text, "Скопировать должников", "btn btn--primary")}</div>`,
     };
@@ -1332,7 +1348,7 @@
         <div class="filter"><button aria-pressed="${!past}" data-act="showPast" data-v="0">Предстоящие · ${nUp}</button><button aria-pressed="${past}" data-act="showPast" data-v="1">Прошедшие</button></div>
         ${items.length ? `<div class="grid grid--cols">${items.map(e => {
           const c = eventKind(e), d = eventDate(e), g = new Set(e.going || []), n = daysBetween(TODAY, d);
-          const faces = students().filter(s => g.has(s.id)).slice(0, 4).map(s => avatar(s.name)).join("");
+          const faces = students().filter(s => g.has(s.id)).slice(0, 4).map(s => avatar(s)).join("");
           const invite = `${e.title} — ${fmtLong(d)}${e.time ? ", " + e.time : ""}${e.place ? ". Место: " + e.place : ""}.${e.text ? " " + e.text : ""}`;
           return `<article class="card event"><div class="event__date" style="--c:${c.c}"><b>${d.getDate()}</b><span>${MON_SHORT[d.getMonth()]}</span></div>
             <div style="min-width:0"><div class="person__meta" style="margin:0 0 4px"><span class="chip" style="--c:${c.c}">${ic(c.i)}${esc(e.kind || "Другое")}</span><span>${whenText(n)}</span></div>
@@ -1410,7 +1426,7 @@
   };
 
   /* ----- пример для гостей ----- */
-  // отметки с начала периода занятий по сегодня, а ещё дела, сдачи, касса, сессия и событие — даты от сегодняшнего дня
+  // отметки с начала периода занятий по сегодня, а ещё дела, сдачи, сборы, сессия и событие — даты от сегодняшнего дня
   function demoFill() {
     const R = Math.random, day = n => key(addDays(TODAY, n));
     const ids = students().map(s => s.id), some = share => ids.filter(() => R() < share);
@@ -1477,24 +1493,23 @@
     };
   }
 
-  /* ----- Справки и заявления: кто что сдал в деканат ----- */
+  /* ----- Документы в деканат (справки, заявления) — часть «Сборов» ----- */
   const DOC_HINTS = ["Справка 086/у", "Флюорография", "Согласие на обработку персональных данных", "Копия паспорта", "Копия СНИЛС", "Копия ИНН",
     "Заявление на стипендию", "Заявление на материальную помощь", "Справка с места работы родителей", "Фото 3×4", "Медицинский полис"];
   function docsScreen() {
-    const all = DB.docs.map(x => ({ x, ...checkStats("docs", x) })).sort((a, b) => (a.x.due || "9999").localeCompare(b.x.due || "9999") || (b.x.created || 0) - (a.x.created || 0));
-    const done = S.docsDone, nOpen = all.filter(a => a.left.length || !a.list.length).length;
-    const items = all.filter(a => (a.left.length === 0 && a.list.length > 0) === done);
+    const closed = a => a.left.length === 0 && a.list.length > 0;
+    const items = DB.docs.map(x => ({ x, ...checkStats("docs", x) })).sort((a, b) => closed(a) - closed(b) || (a.x.due || "9999").localeCompare(b.x.due || "9999") || (b.x.created || 0) - (a.x.created || 0));
+    const nOpen = items.filter(a => !closed(a)).length;
     const card = ({ x, list, ok, left }) => `<a class="card card--tap work" href="#check/docs/${esc(x.id)}">
       <div class="work__head"><div style="min-width:0"><div class="task__title">${esc(x.title)}</div>${x.note ? `<div class="person__meta" style="margin:2px 0">${esc(x.note)}</div>` : ""}</div>
         <b class="num work__count" style="color:${left.length ? "var(--text)" : "var(--ok-ink)"}">${ok}<small>/${list.length}</small></b></div>
       ${bar(list.length ? ok / list.length * 100 : 0, left.length ? "var(--primary)" : "var(--ok)", true)}
       <div class="work__foot">${x.due ? dueHtml({ due: x.due, done: !left.length }) : `<div class="due due--ok">без срока</div>`}${left.length ? `<span class="muted">не сдали: ${left.length}</span>` : `<span style="color:var(--ok-ink)">${ic("tick")} сдали все</span>`}</div></a>`;
     return {
-      title: "Справки", sub: `${nOpen} ${plural(nOpen, ["документ собирается", "документа собираются", "документов собираются"])}`, nav: "tasks", fab: "doc",
-      html: `${extraTabs()}
-        <div class="filter"><button aria-pressed="${!done}" data-act="docsDone" data-v="0">Собираю · ${nOpen}</button><button aria-pressed="${done}" data-act="docsDone" data-v="1">Сдали все · ${all.length - nOpen}</button></div>
+      title: "Сборы", sub: `документы · ${nOpen ? `${nOpen} ${plural(nOpen, ["собирается", "собираются", "собираются"])}` : items.length ? "всё собрано" : "в деканат"}`, nav: "tasks", fab: "doc",
+      html: `${extraTabs()}${collectKinds()}
         ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
-          : empty("doc", done ? "Пока ничего" : "Документов нет", done ? "Документы, которые сдали все, появятся здесь." : "Нажмите «+»: справка 086/у, флюорография, согласие на обработку данных, заявление — и отмечайте, кто сдал в деканат.")}`,
+          : empty("doc", "Документов нет", "Нажмите «+»: справка 086/у, флюорография, согласие на обработку данных, заявление — и отмечайте, кто сдал в деканат.")}`,
     };
   }
 
@@ -1531,10 +1546,10 @@
     // длинные варианты — в строке студента только номера, выбранное подписываем текстом
     const short = p.options.every(o => o.length <= 12);
     const row = s => { const a = pollAns(p, s.id);
-      return `<div class="card poll-row">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
+      return `<div class="card poll-row">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
         ${!short && a.length ? `<div class="person__meta">${a.map(i => esc(p.options[i])).join(", ")}</div>` : ""}
         <div class="poll-row__opts" role="group" aria-label="Ответ: ${esc(s.name)}">${p.options.map((o, i) => `<button type="button" class="chip-btn${short ? "" : " chip-btn--num"}" aria-pressed="${a.includes(i)}" data-act="pollAnswer" data-p="${esc(p.id)}" data-id="${esc(s.id)}" data-i="${i}" title="${esc(o)}" aria-label="${i + 1}. ${esc(o)}">${short ? `${i + 1}. ${esc(o)}` : i + 1}</button>`).join("")}</div></div></div>`; };
-    const leftText = st.left.length ? `${p.title}: ещё не ответили — ${st.left.map(s => s.name).join(", ")}.` : `${p.title}: ответили все, спасибо!`;
+    const leftText = st.left.length ? `${p.title}\nЕщё не ответили:\n${nameList(st.left.map(s => s.name))}` : `${p.title}: ответили все, спасибо!`;
     const results = `Итоги опроса «${p.title}»:\n` + p.options.map((o, i) => `${o} — ${st.counts[i]}`).join("\n");
     return {
       title: p.title, sub: `ответили ${st.answered} из ${st.list.length}${p.closed ? " · завершён" : ""}`, back: "#tasks/polls", nav: "tasks", focus: true,
@@ -1549,11 +1564,11 @@
 
   /* ----- Шаблоны сообщений: свои заготовки с подстановкой из журнала ----- */
   const TPL_DEFAULT = [
-    { title: "Отсутствующие — преподавателю", text: "Здравствуйте, {преподаватель}! На паре «{пара}» {дата} отсутствовали: {отсутствующие}.\nСтароста группы {группа}, {староста}" },
+    { title: "Отсутствующие — преподавателю", text: "Здравствуйте, {преподаватель}! На паре «{пара}» {дата} отсутствовали: {отсутствующие}\n\nСтароста группы {группа}, {староста}" },
     { title: "Расписание на завтра", text: "{расписание_завтра}" },
-    { title: "Напоминание о сдаче работы", text: "Напоминаю: «{работа}» — срок {срок_работы}. Ещё не сдали: {не_сдали_работу}." },
-    { title: "Сбор денег", text: "Собираем на «{сбор}» — по {сумма}. Ещё не сдали: {не_сдали_деньги}." },
-    { title: "Документы в деканат", text: "Нужно сдать: {справка}. Ещё не сдали: {не_сдали_справку}." },
+    { title: "Напоминание о сдаче работы", text: "Напоминаю: «{работа}» — срок {срок_работы}.\nЕщё не сдали: {не_сдали_работу}" },
+    { title: "Сбор денег", text: "Собираем на «{сбор}» — по {сумма}.\nЕщё не сдали: {не_сдали_деньги}" },
+    { title: "Документы в деканат", text: "Нужно сдать: {справка}.\nЕщё не сдали: {не_сдали_справку}" },
     { title: "Поздравление", text: "Ребята, сегодня день рождения у {дни_рождения}! Поздравляем 🎉" },
   ];
   // что можно подставить: [имя, пояснение, значение сейчас]
@@ -1564,21 +1579,23 @@
     const openOf = (kind, arr) => arr.map(x => ({ x, ...checkStats(kind, x) })).filter(a => a.left.length).sort((a, b) => (a.x.due || "9999").localeCompare(b.x.due || "9999"))[0];
     const w = openOf("works", DB.works), f = DB.funds.map(x => ({ x, ...checkStats("funds", x) })).filter(a => a.left.length).sort((a, b) => (b.x.created || 0) - (a.x.created || 0))[0], d = openOf("docs", DB.docs);
     const head = DB.students.find(s => s.role === "head"), bd = students().filter(s => { const p = parseBday(s.birthday); return p && p[0] === TODAY.getDate() && p[1] === TODAY.getMonth() + 1; });
-    const names = a => a.map(s => s.name).join(", ");
+    const names = a => a.length ? "\n" + nameList(a.map(s => s.name)) : "";
     return [
       ["группа", "название группы", groupName()], ["староста", "староста из списка группы", head ? head.name : ""],
       ["дата", "сегодня", `${TODAY.getDate()} ${MONTHS[TODAY.getMonth()]}`], ["завтра", "завтрашняя дата", `${addDays(TODAY, 1).getDate()} ${MONTHS[addDays(TODAY, 1).getMonth()]}`],
       ["пара", "пара, которая идёт или была последней", l ? baseSubject(l.subject) : ""], ["преподаватель", "её преподаватель", l ? l.teacher || "" : ""], ["аудитория", "её аудитория", l ? l.room || "" : ""],
-      ["отсутствующие", "кого не было на этой паре", absent ? (absent.length ? absent.join(", ") : "все были") : "[пара ещё не отмечена]"],
+      ["отсутствующие", "кого не было на этой паре", absent ? (absent.length ? "\n" + nameList(absent) : "все были") : "[пара ещё не отмечена]"],
       ["расписание_сегодня", "пары на сегодня", dayText(TODAY)], ["расписание_завтра", "пары на завтра", dayText(addDays(TODAY, 1))],
       ["работа", "ближайшая несданная работа", w ? w.x.title : ""], ["срок_работы", "её срок", w && w.x.due ? fmtDate(parseISO(w.x.due)) : "без срока"], ["не_сдали_работу", "кто её не сдал", w ? names(w.left) : ""],
       ["сбор", "последний незакрытый сбор", f ? f.x.title : ""], ["сумма", "сумма с человека", f ? rub(f.x.amount) : ""], ["не_сдали_деньги", "кто не сдал деньги", f ? names(f.left) : ""],
       ["справка", "ближайший документ в деканат", d ? d.x.title : ""], ["не_сдали_справку", "кто его не сдал", d ? names(d.left) : ""],
-      ["дни_рождения", "у кого сегодня день рождения", names(bd)],
+      ["дни_рождения", "у кого сегодня день рождения", bd.map(s => s.name).join(", ")],
     ];
   }
-  const tplFill = (text, vals = tplValues()) => { const m = Object.fromEntries(vals.map(([k, , v]) => [k, v])); return String(text || "").replace(/\{([а-яё_]+)\}/gi, (all, k) => k.toLowerCase() in m ? (m[k.toLowerCase()] || "—") : all); };
+  const TPL_OLD = { "Здравствуйте, {преподаватель}! На паре «{пара}» {дата} отсутствовали: {отсутствующие}.\nСтароста группы {группа}, {староста}": "Здравствуйте, {преподаватель}! На паре «{пара}» {дата} отсутствовали: {отсутствующие}\n\nСтароста группы {группа}, {староста}", "Напоминаю: «{работа}» — срок {срок_работы}. Ещё не сдали: {не_сдали_работу}.": "Напоминаю: «{работа}» — срок {срок_работы}.\nЕщё не сдали: {не_сдали_работу}", "Собираем на «{сбор}» — по {сумма}. Ещё не сдали: {не_сдали_деньги}.": "Собираем на «{сбор}» — по {сумма}.\nЕщё не сдали: {не_сдали_деньги}", "Нужно сдать: {справка}. Ещё не сдали: {не_сдали_справку}.": "Нужно сдать: {справка}.\nЕщё не сдали: {не_сдали_справку}" };
+  const tplFill = (text, vals = tplValues()) => { const m = Object.fromEntries(vals.map(([k, , v]) => [k, v])); return String(text || "").replace(/\{([а-яё_]+)\}/gi, (all, k) => k.toLowerCase() in m ? (m[k.toLowerCase()] || "—") : all).replace(/ +\n/g, "\n"); };
   SCREENS.templates = () => {
+    DB.templates.forEach(t => { if (TPL_OLD[t.text]) t.text = TPL_OLD[t.text]; });
     if (!DB.settings.tpl_seeded) { DB.templates.push(...TPL_DEFAULT.map(t => ({ id: newId(), ...t }))); DB.settings.tpl_seeded = true; persist(); }
     const vals = tplValues();
     const card = t => { const txt = tplFill(t.text, vals);
@@ -1586,7 +1603,7 @@
         <p class="tpl__text">${esc(txt)}</p><div class="btn-row">${copyBtn(txt, "Скопировать", "btn btn--primary btn--sm")}</div></article>`; };
     return {
       title: "Шаблоны сообщений", sub: "для чата группы и преподавателей", back: "#home", nav: "home", fab: "tpl",
-      html: `<p class="hint" style="text-align:left">Слова в фигурных скобках подставляются сами — из журнала, сдач, кассы и расписания на сегодня. Нажмите «Скопировать» и вставьте в чат.</p>
+      html: `<p class="hint" style="text-align:left">Слова в фигурных скобках подставляются сами — из журнала, сдач, сборов и расписания на сегодня. Нажмите «Скопировать» и вставьте в чат.</p>
         ${DB.templates.length ? `<div class="grid grid--cols">${DB.templates.map(card).join("")}</div>` : empty("chat", "Шаблонов нет", "Нажмите «+», чтобы добавить свою заготовку сообщения.")}
         <details class="card tpl-keys"><summary><b>Что можно подставить</b><span class="muted"> · ${vals.length} слов</span></summary>
           <div class="mini" style="margin-top:8px">${vals.map(([k, hint, v]) => `<div class="mini__row"><div class="mini__body"><div class="mini__title"><code>{${k}}</code> — ${esc(hint)}</div><div class="mini__sub">${esc(String(v || "—").split("\n")[0].slice(0, 90))}</div></div></div>`).join("")}</div></details>`,
@@ -1617,7 +1634,7 @@
       return `<a class="mini__row" href="#grades/${esc(x.id)}"><span class="badge" style="--c:${x.kind === "Экзамен" ? "var(--accent-1)" : "var(--accent-6)"}">${ic("exam")}</span><div class="mini__body"><div class="mini__title">${esc(x.kind)}: ${esc(baseSubject(x.subject))}</div><div class="mini__sub">${fmtDate(parseISO(x.date))} · оценки ${graded} из ${n}${bad ? ` · <span style="color:var(--bad-ink)">долгов ${bad}</span>` : ""}</div></div>${ic("right", "list__chev")}</a>`; };
     const debtText = sum.filter(x => x.g.debts.length).map(x => `${x.s.name}: ${x.g.debts.map(e => baseSubject(e.x.subject)).join(", ")}`).join("\n");
     const studentRow = ({ s, g }) => { const [t, c] = STATUS_CHIP[g.status];
-      return `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
+      return `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
         <div class="person__meta"><span class="chip" style="--c:${c}">${t}</span>${g.avg ? `<span class="num">ср. ${g.avg.toFixed(1).replace(".", ",")}</span>` : ""}${g.debts.length ? `<span style="color:var(--bad-ink)">${g.debts.map(e => esc(baseSubject(e.x.subject))).join(", ")}</span>` : ""}${g.threes.length ? `<span>троек: ${g.threes.length}</span>` : ""}${g.retakes.length ? `<span>пересдач: ${g.retakes.length}</span>` : ""}</div></div>${ic("right", "list__chev")}</a>`; };
     return {
       title: "Оценки", sub: exams.length ? `${cnt("stip")} на стипендию · долги у ${cnt("debt")}` : "успеваемость за сессию", nav: "study", fab: "exam",
@@ -1642,11 +1659,11 @@
     const set = gradeSet(x), res = x.results ||= {}, list = students();
     const chips = (s, field, opts) => opts.map(g => `<button type="button" class="chip-btn chip-btn--grade" style="--c:${gradeColor(g)}" aria-pressed="${(res[s.id] || {})[field] === g}" data-act="gradeSet" data-x="${esc(x.id)}" data-id="${esc(s.id)}" data-f="${field}" data-g="${esc(g)}">${g}</button>`).join("");
     const row = s => { const r = res[s.id] || {}, bad = BAD_GRADES.has(r.g);
-      return `<div class="card poll-row">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
+      return `<div class="card poll-row">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
         <div class="poll-row__opts" role="group" aria-label="Оценка: ${esc(s.name)}">${chips(s, "g", set)}</div>
         ${bad ? `<div class="poll-row__opts" role="group" aria-label="Пересдача"><span class="muted" style="font-size:12px;align-self:center">Пересдача:</span>${chips(s, "r", set.filter(g => g !== "н/я"))}</div>` : ""}</div></div>`; };
     const debt = list.filter(s => BAD_GRADES.has(finalGrade(res[s.id]))), graded = list.filter(s => (res[s.id] || {}).g).length;
-    const text = debt.length ? `${x.kind} «${baseSubject(x.subject)}»: не сдали — ${debt.map(s => s.name).join(", ")}.` : `${x.kind} «${baseSubject(x.subject)}»: сдали все!`;
+    const text = debt.length ? `${x.kind} «${baseSubject(x.subject)}»\nНе сдали:\n${nameList(debt.map(s => s.name))}` : `${x.kind} «${baseSubject(x.subject)}»: сдали все!`;
     const dist = set.map(g => [g, list.filter(s => finalGrade(res[s.id]) === g).length]).filter(([, n]) => n);
     return {
       title: `${x.kind}: ${baseSubject(x.subject)}`, sub: `${fmtDate(parseISO(x.date))} · оценки ${graded} из ${list.length}${debt.length ? ` · долгов ${debt.length}` : ""}`, back: "#study/grades", nav: "study", focus: true,
@@ -1791,7 +1808,7 @@
   let lastRoute = "", current = null;
 
   // «Учёба» и «Внеучебка» открываются на той вкладке, где были в прошлый раз
-  const navHref = id => id === "study" ? `#study/${S.studyView}` : id === "tasks" ? (EXTRA_VIEWS.find(v => v[0] === S.tasksView) || EXTRA_VIEWS[0])[2] : `#${id}`;
+  const navHref = id => id === "study" ? `#study/${S.studyView}` : id === "tasks" ? (S.tasksView === "docs" ? "#tasks/docs" : (EXTRA_VIEWS.find(v => v[0] === S.tasksView) || EXTRA_VIEWS[0])[2]) : `#${id}`;
   function renderNav(active) {
     nav.innerHTML = `<a class="nav__brand" href="#home"><span class="brand__logo">${ic("school")}</span>Помощник<br>старосты</a>` +
       NAV.map(([id, n, i]) => `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""}>${ic(i)}<span>${n}</span></a>`).join("") +
@@ -1862,7 +1879,7 @@
   const formErr = `<p class="form-err" style="color:var(--bad-ink);font-size:13px;margin:-4px 0 10px" role="alert" hidden></p>`;
   const formBtns = (delAct, delId) => `${formErr}<div class="btn-row" style="margin-top:6px">${delAct ? `<button type="button" class="btn btn--danger" style="flex:0 0 48px;padding:0" data-act="${delAct}" data-id="${esc(delId)}" aria-label="Удалить">${ic("delete")}</button>` : ""}<button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Сохранить</button></div>`;
   const select = (name, opts, val) => `<select name="${name}">${opts.map(o => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}"${String(v) === String(val) ? " selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
-  const toggleRow = (act, attrs, name, on) => `<button type="button" class="card card--tap person mark" data-act="${act}" ${attrs} data-s="${on ? "+" : "-"}" style="min-height:56px">${avatar(name)}<div class="person__body"><div class="person__name">${esc(name)}</div></div><span class="mark__chip">${on ? ic("tick") : "—"}</span></button>`;
+  const toggleRow = (act, attrs, p, on) => `<button type="button" class="card card--tap person mark" data-act="${act}" ${attrs} data-s="${on ? "+" : "-"}" style="min-height:56px">${avatar(p)}<div class="person__body"><div class="person__name">${esc(p.name)}</div></div><span class="mark__chip">${on ? ic("tick") : "—"}</span></button>`;
   const doneBtn = `<div style="position:sticky;bottom:0;padding-top:12px;background:var(--card)"><button class="btn btn--primary btn--block btn--lg" data-act="closeSheet">Готово</button></div>`;
   const baseSubjects = () => [...new Set(DB.lessons.map(l => baseSubject(l.subject)))].sort((a, b) => a.localeCompare(b, "ru"));
   const numOptions = () => bells().map((x, i) => [i + 1, `${i + 1} пара · ${x[0]}–${x[1]}`]);
@@ -1957,7 +1974,7 @@
     quick: () => `${sheetHead("plus", "var(--primary)", "Что добавить?")}<div class="quick">
       ${[["task", "tasks", "Дело", "var(--bad)"], ["event", "party", "Событие", "var(--accent-5)"], ["schedAdd", "schedule", "Пару", "var(--accent-6)"], ["student", "add_one", "Студента", "var(--accent-2)"],
         ["work", "works", "Сдачу работы", "var(--accent-6)"], ["fund", "cash", "Сбор денег", "var(--accent-3)"], ["exam", "exam", "Экзамен", "var(--accent-1)"],
-        ["doc", "doc", "Справку", "var(--accent-4)"], ["poll", "poll", "Опрос", "var(--accent-5)"]].map(([k, i, n, c]) =>
+        ["doc", "doc", "Документ в деканат", "var(--accent-4)"], ["poll", "poll", "Опрос", "var(--accent-5)"]].map(([k, i, n, c]) =>
         `<button class="card card--tap" data-act="form" data-f="${k}"><span class="badge" style="--c:${c}">${ic(i)}</span><b>${n}</b></button>`).join("")}
         <button class="card card--tap" data-act="goTemplates"><span class="badge" style="--c:var(--accent-2)">${ic("chat")}</span><b>Сообщение по шаблону</b></button></div>`,
     task: (id) => { const t = DB.tasks.find(x => x.id === id) || {}; return `${sheetHead("tasks", "var(--bad)", t.id ? "Дело" : "Новое дело")}<form data-form="task" data-id="${esc(t.id || "")}">
@@ -2012,7 +2029,8 @@
     contacts: () => `${sheetHead("contact", "var(--accent-2)", "Контакты списком")}<form data-form="contacts">
       <p class="muted" style="margin:-6px 0 12px;font-size:14px">Вставьте таблицу из Excel, Google Таблиц или ответов Google Формы — или загрузите файл (.xlsx, .csv, контакты телефона .vcf). Каждого найдём по ФИО и заполним телефон, почту, Telegram и день рождения.</p>
       ${field("Таблица или контакты", textarea("list", "", 8, "ФИО\tТелефон\tПочта\tTelegram\tДень рождения\nИванов Иван\t89001234567\tivanov@mail.ru\t@ivanov\t05.11.2007"))}
-      <div class="btn-row" style="margin:-4px 0 10px"><button type="button" class="btn btn--neutral btn--sm" data-act="contactsFile">${ic("excel")}Из файла: .xlsx, .csv, .vcf</button></div>
+      <div class="btn-row" style="margin:-4px 0 10px"><button type="button" class="btn btn--neutral btn--sm" data-act="contactsFile">${ic("excel")}Из файла: .xlsx, .csv, .vcf</button><button type="button" class="btn btn--neutral btn--sm" data-act="avaMany">${ic("camera")}Фото группы</button></div>
+      <p class="hint" style="text-align:left;margin:-2px 0 10px">«Фото группы»: выберите сразу несколько фото, названных по фамилии — «Иванов.jpg», «Петрова Анна.png».</p>
       <label class="check-row"><input type="checkbox" name="overwrite"> Заменять уже заполненные поля</label>
       <label class="check-row"><input type="checkbox" name="addMissing"> Добавить в группу тех, кого в ней нет</label>
       <div class="list-preview" id="listPreview" aria-live="polite"></div>
@@ -2100,7 +2118,7 @@
     // в окне — только те, по кому напоминание ещё не видели
     bdays: () => { const list = bdayPending().length ? bdayPending() : upcomingBdays(BDAY_AHEAD), today = list.some(x => x.n === 0);
       return `${sheetHead("cake", "var(--accent-5)", today && list.length === 1 ? "День рождения сегодня" : "Скоро дни рождения")}
-        <div class="list list--sheet">${list.map(x => `<div class="list__row">${avatar(x.s.name)}<div class="person__body"><div class="person__name">${esc(x.s.name)}</div>
+        <div class="list list--sheet">${list.map(x => `<div class="list__row">${avatar(x.s)}<div class="person__body"><div class="person__name">${esc(x.s.name)}</div>
           <div class="person__meta">${x.n === 0 ? `<b style="color:var(--primary-ink)">сегодня</b>` : esc(bdayWhen(x))}${x.age ? ` · исполнится ${x.age}` : ""}</div></div>
           <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(greeting(x.s))}" aria-label="Скопировать поздравление для ${esc(x.s.name)}" title="Скопировать поздравление">${ic("copy")}</button></div>`).join("")}</div>
         <p class="hint" style="text-align:left;margin:10px 0 14px">Кнопка ${ic("copy")} копирует поздравление для чата группы. Напоминаем за неделю и в сам день.</p>
@@ -2174,10 +2192,10 @@
       ${field("Телефон", `<input name="phone" type="tel" value="${esc(t?.phone || "")}">`)}</div>
       ${field("Заметка", textarea("note", t?.note || ""))}${formBtns(t && "delTeacher", t?.id)}</form>`; },
     deputies: () => `${sheetHead("crown", "#8B5CF6", "Замы старосты")}<p class="muted" style="margin:-6px 0 12px;font-size:14px">Нажмите, чтобы назначить или снять.</p>
-      <div class="stack" style="gap:6px">${students().filter(s => s.role !== "head").map(s => toggleRow("deputyToggle", `data-id="${esc(s.id)}"`, s.name, s.role === "deputy")).join("")}</div>${doneBtn}`,
+      <div class="stack" style="gap:6px">${students().filter(s => s.role !== "head").map(s => toggleRow("deputyToggle", `data-id="${esc(s.id)}"`, s, s.role === "deputy")).join("")}</div>${doneBtn}`,
     going: (id) => { const e = DB.events.find(x => x.id === id), g = new Set(e.going || []);
       return `${sheetHead("going", "var(--primary)", "Кто идёт")}<p class="muted" style="margin:-6px 0 12px;font-size:14px">${esc(e.title)}</p>
-      <div class="stack" style="gap:6px">${students().map(s => toggleRow("goingToggle", `data-e="${esc(e.id)}" data-id="${esc(s.id)}"`, s.name, g.has(s.id))).join("")}</div>${doneBtn}`; },
+      <div class="stack" style="gap:6px">${students().map(s => toggleRow("goingToggle", `data-e="${esc(e.id)}" data-id="${esc(s.id)}"`, s, g.has(s.id))).join("")}</div>${doneBtn}`; },
     ownSplit: () => { const c = subgroupCounts(), own = ownSplit();
       return `${sheetHead("subgroups", "var(--primary)", "Своё деление для предмета")}<form data-form="ownSplit">
       ${field("Предмет", select("base", Object.keys(c).filter(x => !own.includes(x)).sort((a, b) => a.localeCompare(b, "ru")).map(x => [x, `${x} · ${c[x]} ${plural(c[x], ["подгруппа", "подгруппы", "подгрупп"])}`]), ""))}
@@ -2480,7 +2498,7 @@
       const t = markTally(), head = `${MK.l.subject}, ${dmy(MK.d)}`;
       let text;
       if (!t.absent.length && !t.excused.length) text = `${head}: присутствуют все.`;
-      else { text = head; if (t.absent.length) text += "\nОтсутствуют: " + t.absent.map(s => s.name).join(", "); if (t.excused.length) text += "\nПо уважительной причине: " + t.excused.map(s => s.name).join(", "); }
+      else { text = head; if (t.absent.length) text += "\n\nОтсутствуют:\n" + nameList(t.absent.map(s => s.name)); if (t.excused.length) text += "\n\nПо уважительной причине:\n" + nameList(t.excused.map(s => s.name)); }
       copy(text, "Список скопирован");
     },
     copyText: el => copy(el.dataset.t, "Скопировано"),
@@ -2542,7 +2560,7 @@
       try { localStorage.removeItem(DATA_KEY); store.set("pin", null); } catch (e) { /* ничего */ }
       DB = null; LOCKED = false; PIN_IN = ""; closeSheet(); location.hash = ""; render(); toast("Данные стёрты", "delete");
     },
-    // ----- сдачи, касса, сессия
+    // ----- сдачи, сборы, сессия
     worksDone: el => { S.worksDone = el.dataset.v === "1"; render(true); },
     examsPast: el => { S.examsPast = el.dataset.v === "1"; render(true); },
     checkToggle: el => {
@@ -2555,7 +2573,6 @@
       const kind = el.dataset.k, it = CHECK[kind].arr().find(x => x.id === el.dataset.id), m = checkMap(kind, it);
       checkList(kind, it).forEach(s => { m[s.id] = 1; }); persist(); render(true); toast(kind === "funds" ? "Все сдали деньги" : "Все сдали");
     },
-    docsDone: el => { S.docsDone = el.dataset.v === "1"; render(true); },
     pollsClosed: el => { S.pollsClosed = el.dataset.v === "1"; render(true); },
     gradesFilter: el => { S.gradesFilter = S.gradesFilter === el.dataset.v ? "" : el.dataset.v; render(true); },
     pollAnswer: el => {
@@ -2582,6 +2599,30 @@
       const ta = el.closest("form").text, v = el.dataset.v, a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a;
       ta.value = ta.value.slice(0, a) + v + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + v.length;
     },
+    avaMenu: el => { const s = DB.students.find(x => x.id === el.dataset.id); if (!s) return;
+      if (!s.ava) return ACT.avaPick(el);
+      openSheet(`${sheetHead("camera", "var(--accent-2)", "Фото")}<div class="ava-big">${avatar(s, "avatar--xl")}</div>
+        <p class="muted" style="text-align:center;margin:0 0 14px;font-size:14px">${esc(s.name)}</p>
+        <div class="menu"><button class="menu__item" data-act="avaPick" data-id="${esc(s.id)}">${ic("camera")}<span><b>Выбрать другое фото</b></span></button>
+        <button class="menu__item menu__item--bad" data-act="avaDel" data-id="${esc(s.id)}">${ic("delete")}<span><b>Убрать фото</b><small>Вместо фото снова будут инициалы</small></span></button></div>`); },
+    avaPick: el => { const id = el.dataset.id, inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
+      inp.addEventListener("change", async () => { const file = inp.files[0], s = DB.students.find(x => x.id === id); if (!file || !s) return;
+        try { s.ava = await avatarImage(file); } catch (e) { return toast("Не удалось открыть фото — подойдут JPG и PNG", "info"); }
+        persist(); closeSheet(); render(true); toast("Фото добавлено", "camera"); });
+      inp.click(); },
+    avaDel: el => { const s = DB.students.find(x => x.id === el.dataset.id); if (s) delete s.ava; persist(); closeSheet(); render(true); toast("Фото убрано", "camera"); },
+    // фото всей группы разом: файл называется по фамилии или ФИО — «Иванов.jpg», «Петрова Анна.png»
+    avaMany: () => { const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.multiple = true;
+      inp.addEventListener("change", async () => { let ok = 0; const miss = [];
+        for (const file of inp.files) {
+          const m = matchName(file.name.replace(/\.[^.]+$/, "").replace(/[_.\-]+/g, " ").replace(/\d+/g, " ").trim());
+          if (!m || !m.s) { miss.push(file.name); continue; }
+          try { m.s.ava = await avatarImage(file); ok++; } catch (e) { miss.push(file.name); }
+        }
+        if (ok) { persist(); closeSheet(); render(true); }
+        toast(ok ? `Фото добавлены: ${ok}${miss.length ? ` · не узнали: ${miss.length}` : ""}` : "Не нашли, чьи это фото: назовите файлы по фамилии — «Иванов.jpg»", ok ? "camera" : "info");
+      });
+      inp.click(); },
     contactsFile: el => {
       const f = el.closest("form"), inp = document.createElement("input");
       inp.type = "file"; inp.accept = ".xlsx,.csv,.txt,.vcf";
@@ -2882,7 +2923,7 @@
           ${step(1, "Загрузите расписание", "«Настройки» → «Расписание НГТУ» → номер группы, например 26-ИВТ-2-1. Пары, аудитории, преподаватели и звонки подтянутся с сайта НГТУ, а дальше приложение само раз в день проверяет изменения.")}
           ${step(2, "Добавьте группу", "«Группа» → «Добавить списком»: вставьте список из чата или выберите файл Excel. Подгруппы — «Подгруппы» → «Задать списками».")}
           ${step(3, "Отмечайте на паре", "На главной — кнопка «Отметить посещаемость». Нажатие на студента: + был → Н не был → У уважительная. «Копировать» — список отсутствующих для чата.")}
-          ${step(4, "Ведите остальное", "«Дела»: дедлайны, сдачи работ (кто сдал лабораторную), касса группы, сессия. В карточке студента — день рождения и больничные.")}
+          ${step(4, "Ведите остальное", "«Дела»: дедлайны, сдачи работ (кто сдал лабораторную), сборы денег и документов, сессия. В карточке студента — день рождения и больничные.")}
           ${step(5, "Сохраняйте копию", "Данные хранятся только в этом браузере. «Настройки» → «Скачать копию» — раз в пару недель, на случай если браузер очистят.")}
         </section>
         ${sectionHead("", "Полезно знать")}

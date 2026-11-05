@@ -158,6 +158,19 @@ async function run() {
   f.requestSubmit(); await sleep(300);
   const c1 = data().students.find(x => x.id === st0[1].id); log("13 vcf:", c1.phone, c1.email);
 
+  // 14. фото студента, «Сборы» вместо «Кассы» и «Справок», списки для чата столбиком
+  const d14 = data(), s14 = d14.students.find(x => !x.status);
+  s14.ava = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+  setData(d14); await load("#group/students");
+  log("14 group photos:", $$("#view .avatar--img img").length);
+  await go("#student/" + s14.id); log("14 profile:", !!$('#view .ava-pick .avatar--img'), "| label:", $("#view .ava-pick").getAttribute("aria-label"));
+  click("#view .ava-pick"); await until(() => $('#sheet [data-act="avaDel"]'), 2000, "ava sheet");
+  click('#sheet [data-act="avaDel"]'); await sleep(200);
+  log("14 removed:", !data().students.find(x => x.id === s14.id).ava, "| profile:", $("#view .ava-pick").getAttribute("aria-label"));
+  await go("#tasks/funds"); log("14 funds:", text(".topbar__title"), "|", $$("#view .seg button").map(b => b.textContent).join(" | "), "|", $$("#view .filter button").map(b => b.textContent).join(" | "));
+  const fund = data().funds[0];
+  if (fund) { await go("#check/funds/" + fund.id); const t = $('#view [data-act="copyText"]') || $('[data-act="copyText"]'); log("14 debtors text:", JSON.stringify((t && t.dataset.t || "").split("\n").slice(0, 4))); }
+
   log("ERRORS:", errors.join(" | ") || "нет");
 }
 run().catch(e => log("FAIL", e.message, errors.join(" | "))).finally(() => fetch("/__save/result-features.txt", { method: "POST", body: R.join("\n") }));

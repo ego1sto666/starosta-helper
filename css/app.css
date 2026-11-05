@@ -381,6 +381,18 @@ a { color: inherit; text-decoration: none; }
 .avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center;
   background: var(--c); color: var(--fg, #fff); font-size: 14px; font-weight: var(--fw-bold); letter-spacing: .02em; }
 .avatar--lg { width: 64px; height: 64px; font-size: 22px; }
+/* фото вместо инициалов */
+.avatar--img { background: var(--track); overflow: hidden; }
+.avatar--img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar--xl { width: 168px; height: 168px; font-size: 56px; }
+.ava-big { display: grid; place-items: center; margin: 4px 0 10px; }
+/* аватар в карточке студента — кнопка «добавить фото» */
+.ava-pick { position: relative; flex: none; padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; }
+.ava-pick:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 3px; }
+.ava-pick__badge { position: absolute; right: -3px; bottom: -3px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--primary); color: #fff; border: 2px solid var(--card); font-size: 14px; transition: transform .15s ease-out; }
+.ava-pick:hover .ava-pick__badge { transform: scale(1.1); }
+@media (prefers-reduced-motion: reduce) { .ava-pick__badge { transition: none; } }
 .chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px; border-radius: 12px;
   font-size: 12px; font-weight: var(--fw-bold); white-space: nowrap;
   background: color-mix(in srgb, var(--c) 16%, var(--card)); color: color-mix(in srgb, var(--c) 55%, var(--text)); }
