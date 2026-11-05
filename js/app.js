@@ -367,6 +367,29 @@
     return t.getMonth() === mo - 1 && t.getDate() === d ? [d, mo] : null;
   }
   function nextBday([d, m]) { for (const y of [TODAY.getFullYear(), TODAY.getFullYear() + 1]) { const x = new Date(y, m - 1, d); if (x.getMonth() !== m - 1) continue; if (x >= TODAY) return x; } return null; }
+
+  /* ---------- дни рождения: напоминание за неделю и в сам день ---------- */
+  const BDAY_AHEAD = 7;
+  // сколько исполнится (если в дате есть год; «07» → 2007)
+  function bdayAge(str, d) {
+    const m = /\.(\d{2}|\d{4})$/.exec((str || "").trim()); if (!m) return null;
+    let y = +m[1]; if (m[1].length === 2) y += y <= TODAY.getFullYear() % 100 ? 2000 : 1900;
+    const age = d.getFullYear() - y; return age > 0 && age < 100 ? age : null;
+  }
+  function upcomingBdays(days) {
+    return students().map(s => { const p = parseBday(s.birthday), d = p && nextBday(p); return d && { s, d, n: daysBetween(TODAY, d), age: bdayAge(s.birthday, d) }; })
+      .filter(x => x && x.n <= days).sort((a, b) => a.n - b.n || byName(a.s, b.s));
+  }
+  // напоминание по каждому человеку дважды в год: за неделю («week») и в сам день («day»)
+  const bdayStage = x => `${x.s.id}:${x.d.getFullYear()}:${x.n === 0 ? "day" : "week"}`;
+  const bdayPending = () => { const seen = new Set(DB.settings.bday_seen || []); return upcomingBdays(BDAY_AHEAD).filter(x => !seen.has(bdayStage(x))); };
+  const firstName = n => (n || "").trim().split(/\s+/)[1] || n;
+  const greeting = s => `С днём рождения, ${firstName(s.name)}! 🎉 Желаем здоровья, удачи и лёгкой учёбы!`;
+  const bdayWhen = x => x.n === 0 ? "сегодня" : `${fmtDate(x.d)}, ${whenText(x.n)}`;
+  function bdayReminder() {
+    if (!DB || !sheet.hidden || DB.settings.bday_snooze === key(TODAY)) return;
+    if (bdayPending().length) openSheet(FORMS.bdays());
+  }
   const eventDate = e => parseISO(e.date);
   const tgLabel = v => v ? (v.startsWith("+") ? v : "@" + v) : "";
   function normTelegram(s) {
@@ -578,7 +601,9 @@
       ${bdays.length ? `<section class="card"><div class="card__head">${ic("cake")}<h3>Дни рождения</h3></div>
         <div class="mini">${bdays.map(x => `<a class="mini__row" href="#student/${esc(x.s.id)}">${avatar(x.s.name)}<div class="mini__body"><div class="mini__title">${esc(x.s.name)}</div><div class="mini__sub">${fmtDate(x.d)} · ${whenText(x.n)}</div></div></a>`).join("")}</div></section>` : ""}`;
 
+    const bToday = upcomingBdays(0);
     const notices = [
+      bToday.length && `<div class="card tip tip--bday">${ic("cake")}<div class="tip__body"><b>Сегодня день рождения</b><span>${esc(bToday.map(x => x.s.name + (x.age ? ` (${x.age})` : "")).join(", "))}</span></div><button class="btn btn--primary btn--sm" data-act="copyText" data-t="${esc(bToday.map(x => greeting(x.s)).join("\n"))}">${ic("copy")}Поздравление</button></div>`,
       liveNews() && `<div class="card tip tip--live">${ic("calendar")}<div class="tip__body"><b>Изменения в расписании</b><span>На сайте НГТУ: ${LIVE.changes.length} ${plural(LIVE.changes.length, ["изменение", "изменения", "изменений"])} на ближайшие дни</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="live">Посмотреть</button></div>`,
       !DB.lessons.length && `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Загрузите его с сайта НГТУ — это займёт пару секунд.</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="nntu">Загрузить</button></div>`,
       !DB.students.length && `<div class="card tip">${ic("add_many")}<div class="tip__body"><b>Добавьте студентов</b><span>Без списка группы не получится отмечать посещаемость.</span></div><a class="btn btn--soft btn--sm" href="#group">К группе</a></div>`,
@@ -882,7 +907,7 @@
     S.statsPeriod ||= String(semInfo(TODAY).num);
     const recs = periodRecords(S.statsPeriod, S.statsSubject), st = collectStats(recs);
     const subs = [...new Set(periodRecords(S.statsPeriod).map(x => baseSubject(x.r.subject)))].sort((a, b) => a.localeCompare(b, "ru"));
-    const filter = subs.length ? `<div class="filter" role="group" aria-label="Предмет"><button aria-pressed="${!S.statsSubject}" data-act="statsSubj" data-s="">Все предметы</button>${subs.map(s => `<button aria-pressed="${S.statsSubject === s}" data-act="statsSubj" data-s="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : "";
+    const filter = subs.length ? `<div class="filter" role="group" aria-label="Предмет"><button aria-pressed="${!S.statsSubject}" data-act="statsSubj" data-s="">Все предметы</button>${subs.map(s => `<button aria-pressed="${S.statsSubject === s}" data-act="statsSubj" data-s="${esc(s)}" title="${esc(s)}"><span>${esc(s)}</span></button>`).join("")}</div>` : "";
     const head = { title: "Итоги", sub: `${periodName(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: "#journal", nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
     if (!st.all.length) return { ...head, html: `${periodTabs("statsPeriod")}${filter}${empty("chart", "Пока нет отметок", `За период «${periodName(S.statsPeriod)}» ещё нет отмеченных пар. Итоги появятся после первой отметки в журнале.`)}` };
     const P = st.pct ?? 0, list = students().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
@@ -894,16 +919,16 @@
           <div class="summary">${donut([{ v: st.here, c: "var(--here)" }, { v: st.abs, c: "var(--absent)" }, { v: st.exc, c: "var(--excused)" }], 126, 18, `<b style="color:${pctInk(P)}">${P}%</b><small>посещаемость</small>`, `Посещаемость ${P} процентов`)}
           <div class="legend"><div><i style="--c:var(--here)"></i>Были<b>${st.here}</b></div><div><i style="--c:var(--absent)"></i>Не были<b>${st.abs}</b></div><div><i style="--c:var(--excused)"></i>Уважительная<b>${st.exc}</b></div>
           <p class="muted" style="font-size:12px;margin-top:4px">${recs.length} ${plural(recs.length, ["занятие", "занятия", "занятий"])}. Уважительные пропуски не снижают процент.</p></div></div></section>
-        <section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>
+        ${Object.keys(st.byWeek).length >= 3 ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>` : ""}
         ${S.statsSubject ? "" : `<section class="card" style="grid-column:1/-1"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div>
           <div class="grid grid--cols2" style="gap:14px 28px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, p]) =>
             `<button class="bar-row" style="text-align:left" data-act="statsSubj" data-s="${esc(k)}"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(p)}">${p}%</b></div>${bar(p, pctColor(p))}</button>`).join("")}</div></section>`}
       </div>
-      ${sectionHead("group", "Студенты. Сначала с низкой посещаемостью", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
+      ${sectionHead("group", "Студенты. Сначала отстающие", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
       <p class="hint" style="text-align:left">Нажмите на студента, чтобы открыть его пропуски.</p>
-      <div class="grid grid--cols">${list.map(({ s, p, abs, exc }) => `<a class="card card--tap person" href="#student/${esc(s.id)}" data-act="fromStats">
-        ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b style="color:${pctInk(p)}">${p}%</b></div>
-        <div style="margin-top:6px">${bar(p, pctColor(p), true)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div></a>`).join("")}</div>` };
+      <div class="card list list--cols">${list.map(({ s, p, abs, exc }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">
+        ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b class="num" style="color:${pctInk(p)}">${p}%</b></div>
+        <div style="margin:5px 0 3px">${bar(p, pctColor(p), true)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
   };
 
   /* ----- выгрузка в Excel: «Сводка» + лист-ведомость на каждый предмет ----- */
@@ -976,12 +1001,16 @@
     const recs = periodRecords(S.studentPeriod), st = collectStats(recs, s.id), all = collectStats(recs);
     const P = st.pct, avg = all.pct, misses = st.misses.sort((a, b) => b.d - a.d), p = parseBday(s.birthday);
     const roleTxt = s.role === "head" ? " · староста" : s.role === "deputy" ? " · зам. старосты" : "";
+    const nb = p && nextBday(p), nn = nb && daysBetween(TODAY, nb), age = nb && bdayAge(s.birthday, nb);
+    const bday = p ? `<span${nn <= BDAY_AHEAD ? ' style="color:var(--primary-ink);font-weight:var(--fw-bold)"' : ""}>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}${nn === 0 ? " — сегодня!" : nn <= 30 ? `, ${whenText(nn)}` : ""}${age ? ` · исполнится ${age}` : ""}</span>`
+      : `<button class="link" style="padding:4px 0" data-act="form" data-f="student" data-id="${esc(s.id)}">${ic("cake")} Указать день рождения</button>`;
+    const weeks = Object.keys(st.byWeek).length >= 3;
     return {
-      title: s.name, sub: (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
+      title: "Студент", sub: (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
       actions: [["edit", "Редактировать", "form", "student", s.id]],
       html: `
         <section class="card profile">${avatar(s.name, "avatar--lg")}<div style="min-width:0"><h2>${esc(s.name)}</h2>
-          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : ""}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
+          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
         ${periodTabs("studentPeriod")}
         ${!st.all.length ? empty("chart", "Отметок пока нет", `За период «${periodName(S.studentPeriod)}» у студента нет отметок.`) : `
         <div class="grid grid--cols2">
@@ -989,7 +1018,7 @@
             <div class="summary">${donut([{ v: st.here, c: "var(--here)" }, { v: st.abs, c: "var(--absent)" }, { v: st.exc, c: "var(--excused)" }], 120, 17, `<b style="color:${pctInk(P ?? 100)}">${P ?? "—"}${P != null ? "%" : ""}</b><small>посещаемость</small>`, `Посещаемость ${P ?? "—"} процентов`)}
             <div class="legend"><div><i style="--c:var(--here)"></i>Был<b>${st.here}</b></div><div><i style="--c:var(--absent)"></i>Не был<b>${st.abs}</b></div><div><i style="--c:var(--excused)"></i>Уважительная<b>${st.exc}</b></div>
             ${avg != null ? `<div class="compare">В среднем по группе <b style="color:var(--text)">${avg}%</b></div>` : ""}</div></div></section>
-          <section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>
+          ${weeks ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>` : ""}
           <section class="card"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div><div class="stack" style="gap:14px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, q]) =>
             `<div class="bar-row"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(q)}">${q}%</b></div>${bar(q, pctColor(q))}</div>`).join("")}</div></section>
           <section class="card"><div class="card__head">${ic("alarm")}<h3>Пропуски</h3><span class="pill pill--bad num">${misses.length}</span></div>
@@ -1356,6 +1385,15 @@
       ${field("Аудитория", `<input name="room" value="${esc(l.room || "")}">`)}
       <p class="hint" style="text-align:left;margin:-4px 0 12px">Например, преподаватель проводит пару не 5-й, а 1-й: оставьте дату и выберите 1 пару. Постоянное расписание не меняется.</p>
       ${formBtns()}</form>`; },
+    // напоминание о днях рождения (за неделю и в сам день)
+    // в окне — только те, по кому напоминание ещё не видели
+    bdays: () => { const list = bdayPending().length ? bdayPending() : upcomingBdays(BDAY_AHEAD), today = list.some(x => x.n === 0);
+      return `${sheetHead("cake", "var(--accent-5)", today && list.length === 1 ? "День рождения сегодня" : "Скоро дни рождения")}
+        <div class="list list--sheet">${list.map(x => `<div class="list__row">${avatar(x.s.name)}<div class="person__body"><div class="person__name">${esc(x.s.name)}</div>
+          <div class="person__meta">${x.n === 0 ? `<b style="color:var(--primary-ink)">сегодня</b>` : esc(bdayWhen(x))}${x.age ? ` · исполнится ${x.age}` : ""}</div></div>
+          <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(greeting(x.s))}" aria-label="Скопировать поздравление для ${esc(x.s.name)}" title="Скопировать поздравление">${ic("copy")}</button></div>`).join("")}</div>
+        <p class="hint" style="text-align:left;margin:10px 0 14px">Кнопка ${ic("copy")} копирует поздравление для чата группы. Напоминаем за неделю и в сам день.</p>
+        <div class="btn-row"><button class="btn btn--neutral" data-act="bdaySnooze">Напомнить завтра</button><button class="btn btn--primary" data-act="bdaySeen">Понятно</button></div>`; },
     // изменения на ближайшие дни по сайту НГТУ
     live: () => { const L = LIVE; if (!L) return "";
       const line = c => { const d = c.d, day = `${WDS[d.getDay()]} ${fmtDate(d)}`;
@@ -1379,8 +1417,9 @@
         ${field("Роль в группе", select("role", [["", "Студент"], ["head", "Староста"], ["deputy", "Зам. старосты"]], s?.role || ""))}
         ${field("Подгруппа", select("subgroup", [[0, "Не указана"], ...Array.from({ length: Math.max(n, 3) }, (_, i) => [i + 1, `${i + 1}-я подгруппа`])], s?.subgroup || 0))}
         ${field("Телефон", `<input name="phone" type="tel" value="${esc(s?.phone || "")}" placeholder="+7 900 000-00-00">`)}
-        ${field("День рождения", `<input name="birthday" value="${esc(s?.birthday || "")}" placeholder="05.11 или 05.11.2007">`)}
-      </div>${field("Заметка", textarea("note", s?.note || ""))}${formBtns(s && "delStudent", s?.id)}</form>`; },
+        ${field("День рождения", `<input name="birthday" inputmode="decimal" autocomplete="off" value="${esc(s?.birthday || "")}" placeholder="05.11 или 05.11.2007">`)}
+      </div><p class="hint" style="text-align:left;margin:-4px 0 12px">${ic("cake")} За неделю до дня рождения и в сам день приложение напомнит. С годом рождения покажем, сколько исполнится.</p>
+      ${field("Заметка", textarea("note", s?.note || ""))}${formBtns(s && "delStudent", s?.id)}</form>`; },
     addMany: () => `${sheetHead("add_many", "var(--accent-2)", "Добавить списком")}<form data-form="many">
       ${field("Список группы — по человеку на строку", textarea("list", "", 9, "Иванов Иван\nПетрова Анна Сергеевна\n…"))}
       <div class="btn-row" style="margin:-4px 0 10px">${fileBtn("list")}</div>
@@ -1676,6 +1715,13 @@
       if (o.from && DB.overrides[o.from] && DB.overrides[o.from].moved_to === o.id) delete DB.overrides[o.from];
       persist(); closeSheet(); render(true); toast(o.from ? "Пара вернулась на своё место" : "Разовая пара удалена", "delete");
     },
+    // ----- дни рождения
+    bdaySeen: () => {
+      const y = TODAY.getFullYear(), keep = (DB.settings.bday_seen || []).filter(k => +k.split(":")[1] >= y); // старые годы не храним
+      DB.settings.bday_seen = [...new Set([...keep, ...upcomingBdays(BDAY_AHEAD).map(bdayStage)])];
+      persist(); closeSheet(); render(true);
+    },
+    bdaySnooze: () => { DB.settings.bday_snooze = key(TODAY); persist(); closeSheet(); toast("Напомним завтра", "cake"); },
     // ----- автопроверка
     liveApply: () => { if (LIVE) { liveApply(LIVE.changes); DB.settings.nntu_seen = ""; LIVE = { ...LIVE, changes: [], sig: "" }; persist(); } closeSheet(); render(true); toast("Изменения с сайта НГТУ применены"); },
     liveDismiss: () => { if (LIVE) { DB.settings.nntu_seen = LIVE.sig; persist(); } closeSheet(); render(true); },
@@ -1840,7 +1886,7 @@
   });
 
   // вернулись в приложение на следующий день — проверить расписание
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") autoCheck(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { autoCheck(); bdayReminder(); } });
 
   // работа без интернета: файлы приложения кешируются (sw.js)
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -1856,6 +1902,6 @@
     <div class="skeleton" style="height:120px;border-radius:20px"></div></div>`;
   const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
-  fontsReady.then(() => { render(); autoCheck(); });
+  fontsReady.then(() => { render(); autoCheck(); setTimeout(bdayReminder, 400); });
   addEventListener("online", () => autoCheck());
 })();
