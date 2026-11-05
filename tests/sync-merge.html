@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8"><title>sync-merge.html</title>
+<!-- Слияние данных с двух устройств (js/api.js, черновик синхронизации): без сервера, только логика -->
+<script src="/js/api.js"></script>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+window.addEventListener("error", e => errors.push(e.message));
+try {
+  const M = window.StarostaAPI.mergeData;
+  log("0 enabled без сервера:", window.StarostaAPI.enabled());
+  const base = {
+    settings: { group: "26-ИВТ-2-1", risk_pct: 70 },
+    students: [{ id: "a", name: "Андреев" }, { id: "b", name: "Белова" }, { id: "c", name: "Волков" }],
+    attendance: { "2026-11-06|l1": { marks: { a: "+" } } },
+    tasks: [],
+  };
+  const clone = x => JSON.parse(JSON.stringify(x));
+  // я (ноутбук): переименовал Андреева, удалил Волкова, отметил пару l2, добавил дело
+  const local = clone(base);
+  local.students[0].name = "Андреев Даниил"; local.students = local.students.filter(s => s.id !== "c");
+  local.attendance["2026-11-06|l2"] = { marks: { a: "н" } }; local.tasks.push({ id: "t1", title: "Справки" });
+  // зам (телефон): поправил Белову, добавил студента, поменял порог риска, отметил ту же пару l1 по-другому
+  const remote = clone(base);
+  remote.students[1].name = "Белова Мария"; remote.students.push({ id: "d", name: "Громова" });
+  remote.settings.risk_pct = 60; remote.attendance["2026-11-06|l1"] = { marks: { a: "у" } };
+  const m = M(base, local, remote);
+  log("1 students:", m.students.map(s => s.name).join(", "));
+  log("2 settings:", JSON.stringify(m.settings));
+  log("3 attendance:", JSON.stringify(m.attendance));
+  log("4 tasks:", m.tasks.map(t => t.title).join(", "));
+  // оба изменили одно и то же — побеждает моё
+  const l2 = clone(base), r2 = clone(base); l2.students[0].name = "Моё"; r2.students[0].name = "Чужое";
+  log("5 conflict:", M(base, l2, r2).students[0].name);
+  // я удалил, а зам в это время поправил — правка зама сохраняется
+  const l3 = clone(base), r3 = clone(base); l3.students = l3.students.filter(s => s.id !== "b"); r3.students[1].name = "Белова М.";
+  log("6 delete vs edit:", M(base, l3, r3).students.map(s => s.name).join(", "));
+  // первая синхронизация без общей основы — ничего не теряем
+  log("7 no base:", M(null, { students: [{ id: "x", name: "Х" }] }, { students: [{ id: "y", name: "У" }] }).students.map(s => s.name).join(", "));
+} catch (e) { log("FAIL", e.message); }
+log("ERRORS:", errors.join(" | ") || "нет");
+fetch("/__save/result-sync-merge.txt", { method: "POST", body: R.join("\n") }).then(() => console.log("T: DONE"));
+</script>
