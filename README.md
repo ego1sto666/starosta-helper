@@ -16,11 +16,14 @@ app for starosta/
 │  ├─ app.js                   — всё приложение: экраны, данные, отметки
 │  ├─ nntu.js                  — загрузка расписания с сайта НГТУ
 │  └─ xlsx.js                  — выгрузка ведомости в Excel
-├─ assets/                     — шрифты, иконки, значок
+├─ assets/                     — облегчённые шрифты (woff2), значок приложения
 ├─ manifest.webmanifest, sw.js — установка и работа без интернета
+├─ tools/                      — полные шрифты и скрипт, который собирает из них облегчённые
 ├─ Открыть на компьютере.bat   — запустить у себя на ПК
 └─ docs/                       — личное: документы, старые выгрузки, архив программы для ПК (не публикуется)
 ```
+
+Приложение: **https://ego1sto666.github.io/starosta-helper/** (GitHub Pages, обновляется после каждого `git push`).
 
 ## Запуск на компьютере
 Двойной щелчок по **«Открыть на компьютере.bat»**: откроется браузер с адресом `http://127.0.0.1:8765/`.
@@ -68,6 +71,14 @@ NNTU-Map). Официальной документации нет: если НГ
 Прежняя версия на Python + Kivy больше не развивается. Её код лежит в архиве
 `docs/архив — программа для ПК (Kivy).zip`.
 
+## Шрифты
+Из набора Material Design Icons (1,3 МБ) в `assets/icons.woff2` попадают только значки, которые есть в таблице
+`ICON` в `js/app.js`, — около 4 КБ. Roboto урезан до латиницы и кириллицы. Добавили новый значок — пересоберите:
+```
+pip install fonttools brotli
+python tools/subset_fonts.py
+```
+
 ## Сторонние ресурсы
-- `assets/materialdesignicons-webfont.ttf` — Material Design Icons, лицензия Apache 2.0.
-- `assets/Roboto-*.ttf` — шрифт Roboto, лицензия Apache 2.0.
+- Material Design Icons (`tools/fonts/materialdesignicons-webfont.ttf`) — лицензия Apache 2.0.
+- Шрифт Roboto (`tools/fonts/Roboto-*.ttf`) — лицензия Apache 2.0.

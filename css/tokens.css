@@ -148,13 +148,13 @@
   }
 }
 
-/* --- шрифты: Medium и Black из assets; Regular 400 и Bold 700 подключаются из Google Fonts в index.html */
+/* --- шрифты (облегчённые, пересборка: python tools/subset_fonts.py): Medium и Black из assets; Regular 400 и Bold 700 подключаются из Google Fonts в index.html */
 @font-face { font-family: "Roboto"; font-weight: 500; font-display: swap;
-  src: url("../assets/Roboto-Medium.ttf") format("truetype"); }
+  src: url("../assets/Roboto-Medium.woff2") format("woff2"); }
 @font-face { font-family: "Roboto"; font-weight: 900; font-display: swap;
-  src: url("../assets/Roboto-Black.ttf") format("truetype"); }
+  src: url("../assets/Roboto-Black.woff2") format("woff2"); }
 @font-face { font-family: "Material Design Icons"; font-display: block;
-  src: url("../assets/materialdesignicons-webfont.ttf") format("truetype"); }
+  src: url("../assets/icons.woff2") format("woff2"); }
 
 /* --- база */
 html { -webkit-text-size-adjust: 100%; }
