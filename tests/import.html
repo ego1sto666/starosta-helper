@@ -1,0 +1,124 @@
+<!doctype html><meta charset="utf-8"><title>import.html</title>
+<body style="margin:0">
+<iframe id="f" style="width:1280px;height:900px;border:0"></iframe>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const F = () => document.getElementById("f"), W = () => F().contentWindow, D = () => F().contentDocument;
+async function until(fn, ms = 20000, what = "") { const t = Date.now(); while (Date.now() - t < ms) { try { const v = fn(); if (v) return v; } catch (e) {} await sleep(100); } throw new Error("timeout: " + what); }
+async function load(hash = "") {
+  F().src = "/index.html?r=" + Math.random() + hash;
+  await new Promise(r => F().onload = r);
+  W().addEventListener("error", e => errors.push(e.message));
+  const oc = W().HTMLAnchorElement.prototype.click;
+  W().HTMLAnchorElement.prototype.click = function () { if (this.hasAttribute("download")) return; return oc.call(this); };
+  W().addEventListener("unhandledrejection", e => errors.push("rej " + (e.reason && e.reason.message)));
+  await until(() => D().querySelector("#view").children.length && !D().querySelector('[aria-busy="true"]'), 8000, "render");
+}
+const $ = s => D().querySelector(s), $$ = s => [...D().querySelectorAll(s)];
+const click = s => { const el = typeof s === "string" ? $(s) : s; if (!el) throw new Error("no element " + s); el.click(); };
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data") || "null");
+const submit = form => form.requestSubmit();
+const post = (name, body) => fetch("/__save/" + name, { method: "POST", body });
+const text = s => ($(s) ? $(s).innerText.replace(/\s+/g, " ").trim() : "(нет " + s + ")");
+
+async function run() {
+  localStorage.clear();
+  // 1. первый запуск
+  await load();
+  log("1 welcome:", !!$(".welcome"), "| nav display:", getComputedStyle($(".nav")).display, "| topbar:", getComputedStyle($(".topbar")).display);
+  await until(() => $("#nntuGroups").options.length, 15000, "groups");
+  log("1 groups in datalist:", $("#nntuGroups").options.length);
+  const f = $('form[data-form="welcome"]');
+  f.group.value = "ZZZ-1"; submit(f);
+  await until(() => !$(".form-err").hidden, 20000, "err");
+  log("1 bad group:", $(".form-err").textContent);
+  f.group.value = " 26-ивт-2-1 "; submit(f);
+  await until(() => data() && W().location.hash === "#group", 25000, "loaded");
+  let d = data();
+  log("1 loaded: lessons", d.lessons.length, "| bells", d.settings.bells.join(","), "| group", d.settings.group, "/", d.settings.nntu_group, "| teachers", d.teachers.length, "| toast:", text("#toast"));
+  log("1 weeks:", JSON.stringify(d.lessons.reduce((a, l) => (a[l.week] = (a[l.week] || 0) + 1, a), {})), "| sems", [...new Set(d.lessons.map(l => l.sem))]);
+  const real = await (await fetch("/__t/fixtures/demo.json")).json();
+  const k = l => [l.sem, l.day, l.num, l.subject, l.week, l.kind, l.room, l.teacher].join("|");
+  const A = new Set(d.lessons.map(k)), B = new Set(real.lessons.map(k));
+  log("1 vs real data only-new:", [...A].filter(x => !B.has(x)).join(" ;; ") || "—");
+  log("1 vs real data only-real:", [...B].filter(x => !A.has(x)).join(" ;; ") || "—");
+
+  // 2. загрузка файла программы на ПК (имитация: кладём data.json)
+  W().localStorage.setItem("starosta.data", JSON.stringify(real));
+  await load("#home");
+  log("2 home tips:", $$(".tip b").map(b => b.textContent).join(" | ") || "—");
+  await load("#settings");
+  log("2 settings:", $$(".setting").map(s => s.innerText.replace(/\s+/g, " ")).join(" || "));
+
+  // 3. обновление расписания на реальных данных
+  click('[data-act="form"][data-f="nntu"]');
+  await until(() => $('form[data-form="nntu"]'), 3000, "nntu form");
+  await until(() => $("#nntuGroups").options.length, 15000, "groups2");
+  const nf = $('form[data-form="nntu"]'); nf.group.value = "26-ИВТ-2-1"; submit(nf);
+  await until(() => $('[data-act="nntuApply"]'), 25000, "plan");
+  log("3 plan:", text("#sheet"));
+  const idsBefore = real.lessons.map(l => l.id).sort().join();
+  click('[data-act="nntuApply"]');
+  await sleep(300);
+  d = data();
+  log("3 applied: ids kept", d.lessons.map(l => l.id).sort().join() === idsBefore, "| bells", d.settings.bells.length, "| nntu_group", d.settings.nntu_group, "| attendance kept", Object.keys(d.attendance).length === Object.keys(real.attendance).length, "| students", d.students.length);
+  // повторно — должно быть «совпадает»
+  click('[data-act="form"][data-f="nntu"]');
+  await until(() => $('form[data-form="nntu"]'), 3000);
+  submit($('form[data-form="nntu"]'));
+  await until(() => $('[data-act="nntuApply"]'), 25000, "plan2");
+  log("3 second run:", text("#sheet"));
+  click('[data-act="nntuApply"]');
+
+  // 4. Excel
+  await load("#stats");
+  let blob = null;
+  W().URL.createObjectURL = b => { blob = b; return "about:blank"; };
+  click('[data-act="excel"]');
+  await until(() => blob, 3000, "xlsx blob");
+  log("4 excel:", blob.type, blob.size, "bytes | toast:", text("#toast"));
+  await post("att.xlsx", blob);
+  // JSON-копия
+  await load("#settings");
+  blob = null; W().URL.createObjectURL = b => { blob = b; return "about:blank"; };
+  click('[data-act="exportJson"]');
+  await until(() => blob, 3000, "json blob");
+  const back = JSON.parse(await blob.text());
+  log("4 json copy:", blob.size, "bytes, students", back.students.length, "| lastBackup set", !!W().localStorage.getItem("starosta.lastBackup"));
+  await load("#home");
+  log("4 home tips after backup:", $$(".tip b").map(b => b.textContent).join(" | ") || "—");
+
+  // 5. семестры и звонки
+  await load("#settings");
+  click('[data-act="form"][data-f="semesters"]');
+  let sf = $('form[data-form="semesters"]');
+  const keep = sf.end0.value; sf.end0.value = "2026-08-01"; submit(sf);
+  await sleep(150); log("5 bad semester:", text(".form-err"));
+  sf.end0.value = keep; sf.odd1.checked = false; submit(sf);
+  await sleep(200); log("5 semesters saved:", JSON.stringify(data().settings.semesters));
+  click('[data-act="form"][data-f="bells"]');
+  let bf = $('form[data-form="bells"]');
+  bf.s1.value = "09:00"; submit(bf); await sleep(150); log("5 bad bells:", text(".form-err"));
+  bf.s1.value = "09:45"; bf.e6.value = ""; submit(bf); await sleep(150); log("5 bad bells 2:", text(".form-err"));
+  bf.s6.value = ""; submit(bf); await sleep(200); log("5 bells saved:", data().settings.bells.join(","));
+
+  // 6. отметка посещаемости работает
+  const lid = data().lessons[0].id;
+  await load("#mark/" + lid + "/2026-11-02");
+  const row = $('[data-act="mark"]');
+  if (row) { click(row); await sleep(200); log("6 mark click ok, records:", Object.keys(data().attendance).length); } else log("6 mark screen:", text("#view").slice(0, 200));
+
+  // 7. удалить всё
+  await load("#settings");
+  click('[data-act="wipe"]');
+  await until(() => $('#sheet [data-act="wipe"][data-confirmed="1"]'), 2000, "confirm");
+  click('#sheet [data-act="wipe"][data-confirmed="1"]');
+  await sleep(300);
+  log("7 wiped:", data() === null, "| welcome:", !!$(".welcome"));
+
+  log("ERRORS:", errors.join(" | ") || "нет");
+}
+run().catch(e => log("FAIL", e.message, "| errors:", errors.join(" | "))).finally(() => post("result-import.txt", R.join("\n")).then(() => console.log("T: DONE")));
+</script>

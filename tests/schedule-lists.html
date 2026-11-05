@@ -1,0 +1,128 @@
+<!doctype html><meta charset="utf-8"><title>schedule-lists.html</title>
+<body style="margin:0">
+<iframe id="f" style="width:1280px;height:900px;border:0"></iframe>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const F = () => document.getElementById("f"), W = () => F().contentWindow, D = () => F().contentDocument;
+async function until(fn, ms = 20000, what = "") { const t = Date.now(); while (Date.now() - t < ms) { try { const v = fn(); if (v) return v; } catch (e) {} await sleep(100); } throw new Error("timeout: " + what); }
+async function load(hash = "") {
+  F().src = "/index.html?r=" + Math.random() + hash;
+  await new Promise(r => F().onload = r);
+  W().addEventListener("error", e => errors.push(e.message + " @" + e.lineno));
+  W().addEventListener("unhandledrejection", e => errors.push("rej " + (e.reason && e.reason.message)));
+  await until(() => D().querySelector("#view").children.length && !D().querySelector('[aria-busy="true"]'), 8000, "render");
+}
+const $ = s => D().querySelector(s), $$ = s => [...D().querySelectorAll(s)];
+const click = s => { const el = typeof s === "string" ? $(s) : s; if (!el) throw new Error("no element " + s); el.click(); };
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data") || "null");
+const setData = d => W().localStorage.setItem("starosta.data", JSON.stringify(d));
+const text = s => ($(s) ? $(s).innerText.replace(/\s+/g, " ").trim() : "(нет " + s + ")");
+const post = (name, body) => fetch("/__save/" + name, { method: "POST", body });
+const input = (el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); };
+
+async function run() {
+  localStorage.clear();
+  const real = await (await fetch("/__t/fixtures/demo.json")).json();
+  real.settings.nntu_group = "26-ИВТ-2-1";
+  // ---- 1. автопроверка: портим шаблон, чтобы сайт «отличался»
+  const d = JSON.parse(JSON.stringify(real));
+  const A = d.lessons.find(l => l.day === 1 && l.week === "all");       // вторник: сдвинем номер → перенос
+  const B = d.lessons.find(l => l.day === 4 && l.week === "all");       // пятница: удалим → «добавлена»
+  const C = d.lessons.find(l => l.day === 0 && l.num === 3);       // понедельник: другая аудитория → «замена»
+  log("1 seed:", A.subject, A.num, "| del", B.subject, B.num, "| room", C.subject, C.room);
+  const origA = A.num; A.num = 7;
+  d.lessons = d.lessons.filter(l => l !== B);
+  C.room = "999, корп. 9";
+  d.lessons.push({ id: "fake01", subject: "Фейковый предмет", day: 5, num: 6, week: "all", kind: "Лекция", room: "", teacher: "", sem: 1 });
+  await load(); setData(d); await load("#home");
+  await until(() => $(".tip--live"), 25000, "live tip");
+  log("1 home tip:", text(".tip--live"));
+  click('.tip--live [data-f="live"]');
+  await until(() => $('[data-act="liveApply"]'), 3000, "live sheet");
+  log("1 live sheet:", text("#sheet").slice(0, 900));
+  click('[data-act="liveApply"]'); await sleep(300);
+  let x = data();
+  log("1 applied: oneoff", x.oneoff.length, JSON.stringify(x.oneoff.map(o => [o.date, o.subject.slice(0, 14), o.num, o.src, !!o.from])), "| overrides", JSON.stringify(x.overrides));
+  log("1 tip after apply:", $(".tip--live") ? "есть" : "нет");
+  await load("#settings");
+  click('[data-act="checkNow"]');
+  await until(() => $("#sheet:not([hidden]) .sheet__head"), 25000, "recheck");
+  log("1 recheck:", text("#sheet").slice(0, 300));
+  click('#sheet [data-act="closeSheet"]');
+
+  // ---- 2. ручной перенос, возврат, отмена (на чистых данных)
+  setData(real); await load("#schedule");
+  const cards = $$('#view [data-act="lessonMenu"]');
+  log("2 schedule cards:", cards.length, "| fab:", D().getElementById("fab").dataset.kind);
+  click(cards[0]); await until(() => $('#sheet .menu'), 2000, "menu");
+  log("2 menu:", $$("#sheet .menu__item b").map(b => b.textContent).join(" | "));
+  click('#sheet [data-f="move"]'); await until(() => $('form[data-form="move"]'), 2000, "move form");
+  const mf = $('form[data-form="move"]'); mf.requestSubmit(); await sleep(150);
+  log("2 move no-op error:", text(".form-err"));
+  mf.num.value = "1"; mf.requestSubmit(); await sleep(300);
+  x = data();
+  log("2 moved: toast", text("#toast"), "| oneoff", JSON.stringify(x.oneoff), "| overrides", JSON.stringify(x.overrides));
+  log("2 schedule now:", $$("#view .lesson").map(c => c.innerText.replace(/\s+/g, " ").slice(0, 90)).join(" || "));
+  click($('#view .lesson--cancelled')); await until(() => $('#sheet [data-act="restoreLesson"]'), 2000, "restore");
+  click('#sheet [data-act="restoreLesson"]'); await sleep(300);
+  x = data(); log("2 restored: oneoff", x.oneoff.length, "| overrides", Object.keys(x.overrides).length, "| toast", text("#toast"));
+  click($$('#view [data-act="lessonMenu"]')[0]); await until(() => $('#sheet [data-act="cancelLesson"]'), 2000);
+  click('#sheet [data-act="cancelLesson"]'); await sleep(300);
+  x = data(); log("2 cancelled:", JSON.stringify(x.overrides), "| card:", text("#view .lesson--cancelled"));
+  await load("#home");
+  log("2 home tile:", text(".tile"), "| now card:", $(".now") ? text(".now").slice(0, 80) : "нет");
+  await load("#journal");
+  log("2 journal sub:", text(".topbar__sub"));
+  click('[data-f="extra"]'); await until(() => $('form[data-form="oneoff"]'), 2000, "oneoff form");
+  const of = $('form[data-form="oneoff"]'); of.subject.value = "Математика"; of.num.value = "6"; of.requestSubmit();
+  await until(() => W().location.hash.startsWith("#mark/o"), 3000, "to mark");
+  log("2 extra → mark:", W().location.hash, "| title:", text(".topbar__title"));
+  await load("#schedule");
+  log("2 schedule has oneoff:", !!$$("#view .lesson__change").find(e => e.textContent.includes("Разовая")));
+
+  // ---- 3. списки: группа
+  await load("#group");
+  click('[data-f="addMany"]'); await until(() => $('form[data-form="many"]'), 2000);
+  const ml = $('form[data-form="many"]');
+  input(ml.list, "№\tФИО\tгруппа\n1. ИВАНОВ ИВАН\n2) Андреев Даниил\t26-ИВТ-2-1\nПетрова\tАнна\tСергеевна\tбюджет\n1-я подгруппа:\nиванов иван");
+  log("3 many preview:", text("#listPreview"));
+  ml.requestSubmit(); await sleep(300);
+  x = data(); log("3 many added:", text("#toast"), "| students", x.students.length, "| last:", x.students.slice(-2).map(s => s.name).join(", "));
+  // Excel-файл, сохранённый настоящим Excel
+  const file = new File([await (await fetch("/__t/fixtures/list.xlsx")).blob()], "list.xlsx");
+  const rows = await W().XLSX.readRows(file);
+  log("3 xlsx rows:", JSON.stringify(rows));
+  click('[data-f="addMany"]'); await until(() => $('form[data-form="many"]'), 2000);
+  input($('form[data-form="many"]').list, rows.map(r => r.join("\t")).join("\n"));
+  log("3 xlsx preview:", text("#listPreview"));
+  click('#sheet [data-act="closeSheet"]');
+
+  // ---- 4. подгруппы списками
+  await load("#subgroups");
+  click('[data-f="sgLists"]'); await until(() => $('form[data-form="sgLists"]'), 2000, "sg form");
+  let sf = $('form[data-form="sgLists"]');
+  log("4 sg form: lists", $$("#sheet textarea").length, "| base options", sf.base.options.length);
+  input(sf.g1, "Андреев\nБелова М."); input(sf.g2, "Громова Екатерина\nНесуществующий Человек");
+  log("4 preview:", text("#listPreview"));
+  sf.requestSubmit(); await sleep(150); log("4 error:", text(".form-err"));
+  sf.addMissing.click(); await sleep(100); log("4 preview2:", text("#listPreview").slice(0, 200));
+  sf.requestSubmit(); await sleep(400);
+  x = data();
+  const sg = n => x.students.filter(s => s.subgroup === n).map(s => s.name);
+  log("4 saved:", text("#toast"), "| 1:", sg(1).join(", "), "| 2:", sg(2).join(", "), "| без:", x.students.filter(s => !s.subgroup).length);
+  // своё деление для предмета
+  click('[data-f="sgLists"]'); await until(() => $('form[data-form="sgLists"]'), 2000);
+  sf = $('form[data-form="sgLists"]'); const opt = [...sf.base.options].find(o => o.value.startsWith("История"));
+  sf.base.value = opt.value; sf.base.dispatchEvent(new Event("change", { bubbles: true })); await sleep(200);
+  sf = $('form[data-form="sgLists"]');
+  log("4 subject form:", sf.base.value, "| lists", $$("#sheet textarea").length, "| hint:", text("#sheet .hint"));
+  input(sf.g1, "Андреев"); input(sf.g2, "Громова");
+  sf.requestSubmit(); await sleep(400); x = data();
+  log("4 own split:", JSON.stringify(x.settings.own_split), "| Андреев:", JSON.stringify(x.students.find(s => s.name.startsWith("Андреев")).subgroups), "| hash", W().location.hash);
+
+  log("ERRORS:", errors.join(" | ") || "нет");
+}
+run().catch(e => log("FAIL", e.message, "| errors:", errors.join(" | "))).finally(() => post("result-schedule-lists.txt", R.join("\n")).then(() => console.log("T: DONE")));
+</script>

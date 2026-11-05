@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><title>birthdays.html</title>
+<body style="margin:0"><iframe id="f" style="width:400px;height:900px;border:0"></iframe>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const F = () => document.getElementById("f"), W = () => F().contentWindow, D = () => F().contentDocument;
+async function until(fn, ms = 5000, what = "") { const t = Date.now(); while (Date.now() - t < ms) { try { const v = fn(); if (v) return v; } catch (e) {} await sleep(100); } throw new Error("timeout: " + what); }
+async function load(hash = "#home") {
+  F().src = "/index.html?r=" + Math.random() + hash;
+  await new Promise(r => F().onload = r);
+  W().addEventListener("error", e => errors.push(e.message + " @" + e.lineno));
+  await until(() => D().querySelector("#view").children.length && !D().querySelector('[aria-busy="true"]'), 8000, "render");
+  await sleep(900); // напоминание всплывает через 0,4 с
+}
+const $ = s => D().querySelector(s), $$ = s => [...D().querySelectorAll(s)];
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data"));
+const setData = d => W().localStorage.setItem("starosta.data", JSON.stringify(d));
+const ddmm = (k) => { const d = new Date(); d.setDate(d.getDate() + k); return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0"); };
+const popup = () => !$("#sheet").hidden && $("#sheet [data-act=bdaySeen]") ? $$("#sheet .list__row .person__name").map(e => e.textContent).join(", ") : "нет";
+
+async function run() {
+  localStorage.clear();
+  const d = await (await fetch("/__t/fixtures/demo.json")).json();
+  d.students.forEach(s => s.birthday = "");
+  const [a, b, c, e] = [...d.students].sort((x, y) => x.name.localeCompare(y.name, "ru"));
+  a.birthday = ddmm(0) + ".2007"; b.birthday = ddmm(7); c.birthday = ddmm(8); e.birthday = "31.02";
+  await load(); setData(d); await load();
+  log("1 popup:", popup(), "| ждём:", a.name, "+", b.name, "(без", c.name + ")");
+  log("1 today row:", $("#sheet .list__row .person__meta")?.textContent.trim());
+  log("1 home tip:", $(".tip--bday")?.innerText.replace(/\s+/g, " "));
+  $("#sheet [data-act=bdaySeen]").click(); await sleep(200);
+  log("2 seen:", JSON.stringify(data().settings.bday_seen));
+  await load(); log("2 after reload popup:", popup());
+  // наступил день рождения b (стадия «day» ещё не видели) → снова напоминаем
+  const x = data(); x.students.find(s => s.id === b.id).birthday = ddmm(0); setData(x);
+  await load(); log("3 day-of popup:", popup());
+  $("#sheet [data-act=bdaySnooze]").click(); await sleep(200);
+  log("3 snooze:", data().settings.bday_snooze, "| toast:", $("#toast").innerText.trim());
+  await load(); log("3 after snooze popup:", popup());
+  // форма студента: неправильная дата
+  W().location.hash = "#student/" + c.id; await sleep(300);
+  $('[data-act="form"][data-f="student"]').click(); await sleep(200);
+  const f = $('form[data-form="student"]'); f.birthday.value = "32.13"; f.requestSubmit(); await sleep(150);
+  log("4 bad date:", $(".form-err").textContent, "| inputmode:", f.birthday.getAttribute("inputmode"));
+  log("ERRORS:", errors.join(" | ") || "нет");
+}
+run().catch(e => log("FAIL", e.message, errors.join(" | "))).finally(() => fetch("/__save/result-birthdays.txt", { method: "POST", body: R.join("\n") }));
+</script>

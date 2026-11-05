@@ -1,0 +1,95 @@
+<!doctype html><meta charset="utf-8"><title>features.html</title>
+<body style="margin:0"><iframe id="f" style="width:420px;height:900px;border:0"></iframe>
+<script>
+const R = [], errors = [];
+const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const F = () => document.getElementById("f"), W = () => F().contentWindow, D = () => F().contentDocument;
+async function until(fn, ms = 5000, what = "") { const t = Date.now(); while (Date.now() - t < ms) { try { const v = fn(); if (v) return v; } catch (e) {} await sleep(100); } throw new Error("timeout: " + what); }
+let clip = "";
+async function load(hash = "#home") {
+  F().src = "/index.html?r=" + Math.random() + hash;
+  await new Promise(r => F().onload = r);
+  W().addEventListener("error", e => errors.push(e.message + " @" + e.lineno));
+  W().addEventListener("unhandledrejection", e => errors.push("rej " + (e.reason && e.reason.message)));
+  try { Object.defineProperty(W().navigator, "clipboard", { value: { writeText: t => { clip = t; return Promise.resolve(); } }, configurable: true }); } catch (e) {}
+  await until(() => D().querySelector("#view").children.length && !D().querySelector('[aria-busy="true"]'), 8000, "render");
+  await sleep(700);
+  const s = D().querySelector("#sheet"); if (s && !s.hidden) D().querySelector('#sheet [data-act="closeSheet"]')?.click();
+}
+const $ = s => D().querySelector(s), $$ = s => [...D().querySelectorAll(s)];
+const click = s => { const el = typeof s === "string" ? $(s) : s; if (!el) throw new Error("no element " + s); el.click(); };
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data"));
+const setData = d => W().localStorage.setItem("starosta.data", JSON.stringify(d));
+const text = s => ($(s) ? $(s).innerText.replace(/\s+/g, " ").trim() : "(нет " + s + ")");
+const go = async h => { W().location.hash = h; await sleep(250); };
+const iso = k => { const d = new Date(); d.setDate(d.getDate() + k); return d.toISOString().slice(0, 10).replace(/^(\d+)-(\d+)-(\d+)$/, (m, y, mo, da) => `${y}-${mo}-${da}`); };
+
+async function run() {
+  localStorage.clear();
+  const real = await (await fetch("/__t/fixtures/demo.json")).json();
+  real.settings.nntu_group = "26-ИВТ-2-1"; real.settings.nntu_checked = new Date().toISOString().slice(0, 10);
+  await load(); setData(real); await load();
+
+  // 1. сдачи
+  await go("#tasks/works");
+  log("1 tabs:", $$("#view .seg button").map(b => b.textContent).join(" | "), "| fab:", D().getElementById("fab").dataset.kind, "| empty:", text("#view .empty b"));
+  click("#fab"); await until(() => $('form[data-form="work"]'), 2000, "work form");
+  let f = $('form[data-form="work"]'); f.title.value = "Лабораторная №3"; f.subject.value = "Информатика (подгруппа 3)"; f.due.value = iso(3); f.requestSubmit();
+  await until(() => W().location.hash.startsWith("#check/works/"), 2000, "check screen"); await sleep(350);
+  log("1 check:", text(".topbar__title"), "|", text(".topbar__sub"), "| rows:", $$('[data-act="checkToggle"]').length);
+  click($$('[data-act="checkToggle"]')[0]); await sleep(150); click($$('[data-act="checkToggle"]')[1]); await sleep(150);
+  log("1 after 2 toggles:", text(".topbar__sub"));
+  click('#actionbar [data-act="copyText"]'); await sleep(150); log("1 copy:", clip.replace(/\n/g, " / ").slice(0, 160));
+  click('#actionbar [data-act="checkAll"]'); await sleep(200); log("1 all:", text(".topbar__sub"));
+  await go("#tasks/works"); log("1 list (open):", text("#view .empty b") || "-", "| done tab:", $$('#view .filter button')[1].textContent);
+
+  // 2. касса
+  await go("#tasks/funds"); click("#fab"); await until(() => $('form[data-form="fund"]'), 2000);
+  f = $('form[data-form="fund"]'); f.title.value = "Подарок куратору"; f.amount.value = "200"; f.requestSubmit();
+  await until(() => W().location.hash.startsWith("#check/funds/"), 2000, "fund check"); await sleep(350);
+  [0, 1, 2].forEach(i => $$('[data-act="checkToggle"]')[i].click()); await sleep(300);
+  log("2 fund:", text(".topbar__sub"), "| bar:", text(".markbar__count"));
+  await go("#tasks/funds"); log("2 card:", text("#view .work"));
+
+  // 3. сессия
+  await go("#tasks/exams"); click("#fab"); await until(() => $('form[data-form="exam"]'), 2000);
+  f = $('form[data-form="exam"]'); f.subject.value = "Математика"; f.date.value = iso(10); f.time.value = "09:00"; f.room.value = "6125, корп. 6"; f.requestSubmit(); await sleep(300);
+  log("3 exams:", text("#view .event"));
+  await go("#home"); log("3 home tips:", $$(".tip b").map(b => b.textContent).join(" | "));
+
+  // 4. больничный
+  const st = real.students.find(s => Object.values(real.attendance).some(r => r.marks && r.marks[s.id] === "н"));
+  const recKey = Object.keys(real.attendance).find(k => real.attendance[k].marks[st.id] === "н"), recDate = recKey.split("|")[0];
+  await go("#student/" + st.id);
+  click('[data-act="sickAdd"]'); await until(() => $('form[data-form="sick"]'), 2000, "sick form");
+  f = $('form[data-form="sick"]'); f.from.value = recDate; f.to.value = iso(2); f.note.value = "Справка №5"; f.requestSubmit(); await sleep(300);
+  log("4 sick toast:", text("#toast"), "| mark now:", data().attendance[recKey].marks[st.id]);
+  log("4 profile:", text("#view .profile .person__meta"), "| card:", text("#view .card:nth-of-type(2)").slice(0, 80));
+  const lid = data().lessons.find(l => l.day === (new Date().getDay() + 6) % 7)?.id;
+  await go("#group"); log("4 group meta:", text(`#people a[href="#student/${st.id}"] .person__meta`));
+
+  // 5. риск недопуска
+  await go("#stats"); log("5 stats risk head:", text("#view .section-head h2"), "| rows:", $$("#view .list--cols")[0]?.children.length);
+  click('[data-f="risk"]'); await until(() => $('form[data-form="risk"]'), 2000); f = $('form[data-form="risk"]'); f.pct.value = "50"; f.requestSubmit(); await sleep(300);
+  log("5 threshold 50:", text("#view .section-head h2"), "| rows:", $$("#view .list--cols")[0]?.children.length, "| saved:", data().settings.risk_pct);
+
+  // 6. тексты для чата и #now
+  await go("#schedule"); click('#topbar [data-act="copyDay"]'); await sleep(200); log("6 day text:", clip.replace(/\n/g, " / ").slice(0, 220));
+  await go("#now"); log("6 now →", W().location.hash);
+  await go("#help"); log("6 help:", text("#view .hero h1"), "| steps:", $$(".help-step").length);
+
+  // 7. код-пароль
+  await go("#settings"); click('[data-act="form"][data-f="pin"]'); await until(() => $('form[data-form="pin"]'), 2000);
+  f = $('form[data-form="pin"]'); f.p1.value = "1234"; f.p2.value = "4321"; f.requestSubmit(); await sleep(150); log("7 mismatch:", text(".form-err"));
+  f.p2.value = "1234"; f.requestSubmit(); await sleep(400); log("7 pin set:", !!W().localStorage.getItem("starosta.pin"), "| toast:", text("#toast"));
+  await load("#home"); log("7 locked:", !!$(".lock"), "| nav hidden:", getComputedStyle($(".nav")).display);
+  for (const k of "1111") click(`[data-act="pinKey"][data-k="${k}"]`); await sleep(700); log("7 wrong → still locked:", !!$(".lock"));
+  for (const k of "1234") click(`[data-act="pinKey"][data-k="${k}"]`); await sleep(500); log("7 right → unlocked:", !$(".lock"), "| home:", !!$(".hero"));
+  await go("#settings"); click('[data-act="pinOff"]'); await sleep(200); click('#sheet [data-act="pinOff"][data-confirmed="1"]'); await sleep(200);
+  log("7 off:", W().localStorage.getItem("starosta.pin"));
+
+  log("ERRORS:", errors.join(" | ") || "нет");
+}
+run().catch(e => log("FAIL", e.message, errors.join(" | "))).finally(() => fetch("/__save/result-features.txt", { method: "POST", body: R.join("\n") }));
+</script>
