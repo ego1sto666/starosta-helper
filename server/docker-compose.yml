@@ -1,0 +1,52 @@
+# Сервер целиком на одной машине (VPS в России): база, API, фоновая проверка почты, приём писем, HTTPS.
+# Запуск: docker compose up -d   (перед этим — файл .env, см. .env.example и design/architecture.md)
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: starosta
+      POSTGRES_USER: starosta
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?задайте DB_PASSWORD в .env}
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [db]
+
+  worker:  # IMAP-ящики, очистка старых писем, позже — напоминания и бот
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.worker"]
+    depends_on: [db]
+
+  inbound:  # приём писем, пересланных на адрес группы (MX-запись домена → этот сервер)
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.mail.inbound"]
+    ports: ["25:2525"]
+    depends_on: [db]
+
+  caddy:  # HTTPS-сертификат сам; отдаёт приложение (PWA) и проксирует /api на api:8000
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:  # только файлы приложения — не весь репозиторий (там server/.env с паролями)
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../index.html:/srv/app/index.html:ro
+      - ../manifest.webmanifest:/srv/app/manifest.webmanifest:ro
+      - ../sw.js:/srv/app/sw.js:ro
+      - ../css:/srv/app/css:ro
+      - ../js:/srv/app/js:ro
+      - ../assets:/srv/app/assets:ro
+      - ../demo:/srv/app/demo:ro
+      - caddy:/data
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  caddy:

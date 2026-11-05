@@ -1,0 +1,16 @@
+# Замените starosta.example.ru на свой домен.
+starosta.example.ru {
+	encode zstd gzip
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		root * /srv/app
+		file_server
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
+}

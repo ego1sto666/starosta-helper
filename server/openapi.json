@@ -1,0 +1,1302 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Помощник старосты — API",
+  "description": "Аккаунты, синхронизация данных группы и письма преподавателей. Черновик.",
+  "version": "0.1.0-draft"
+ },
+ "paths": {
+  "/auth/register": {
+   "post": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Register",
+    "operationId": "register_auth_register_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegisterIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/login": {
+   "post": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Login",
+    "operationId": "login_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/logout": {
+   "post": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Logout",
+    "operationId": "logout_auth_logout_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    }
+   }
+  },
+  "/auth/me": {
+   "get": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Me",
+    "operationId": "me_auth_me_get",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/password/forgot": {
+   "post": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Forgot",
+    "description": "Письмо со ссылкой сброса. Ответ всегда одинаковый — не выдаём, есть ли такая почта.",
+    "operationId": "forgot_auth_password_forgot_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ForgotIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/auth/password/reset": {
+   "post": {
+    "tags": [
+     "Аккаунт"
+    ],
+    "summary": "Reset",
+    "operationId": "reset_auth_password_reset_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResetIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups": {
+   "post": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "Create Group",
+    "operationId": "create_group_groups_post",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GroupIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "My Groups",
+    "operationId": "my_groups_groups_get",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/data": {
+   "get": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "Get Data",
+    "operationId": "get_data_groups__group_id__data_get",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "Put Data",
+    "operationId": "put_data_groups__group_id__data_put",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DataIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/invites": {
+   "post": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "Create Invite",
+    "operationId": "create_invite_groups__group_id__invites_post",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InviteIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/invites/accept": {
+   "post": {
+    "tags": [
+     "Группы и данные"
+    ],
+    "summary": "Accept Invite",
+    "operationId": "accept_invite_invites_accept_post",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AcceptIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/mail/sources": {
+   "get": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Sources",
+    "operationId": "sources_groups__group_id__mail_sources_get",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Add Imap",
+    "operationId": "add_imap_groups__group_id__mail_sources_post",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ImapIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/mail/sources/{source_id}": {
+   "delete": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Remove Source",
+    "operationId": "remove_source_groups__group_id__mail_sources__source_id__delete",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "source_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Source Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/inbox": {
+   "get": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Inbox",
+    "operationId": "inbox_groups__group_id__inbox_get",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "default": "new",
+       "title": "Status"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/inbox/{item_id}/accept": {
+   "post": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Accept",
+    "description": "Сам объект (дело, сдачу…) создаёт приложение в данных группы; сюда — только отметка «сделано».",
+    "operationId": "accept_groups__group_id__inbox__item_id__accept_post",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "item_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Item Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DecideIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/inbox/{item_id}/dismiss": {
+   "post": {
+    "tags": [
+     "Почта"
+    ],
+    "summary": "Dismiss",
+    "operationId": "dismiss_groups__group_id__inbox__item_id__dismiss_post",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "item_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Item Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/health": {
+   "get": {
+    "tags": [
+     "Служебное"
+    ],
+    "summary": "Health",
+    "operationId": "health_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AcceptIn": {
+    "properties": {
+     "code": {
+      "type": "string",
+      "title": "Code"
+     }
+    },
+    "type": "object",
+    "required": [
+     "code"
+    ],
+    "title": "AcceptIn"
+   },
+   "DataIn": {
+    "properties": {
+     "rev": {
+      "type": "integer",
+      "title": "Rev"
+     },
+     "data": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Data"
+     }
+    },
+    "type": "object",
+    "required": [
+     "rev",
+     "data"
+    ],
+    "title": "DataIn"
+   },
+   "DecideIn": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "maxLength": 20,
+      "title": "Type",
+      "default": "none"
+     },
+     "id": {
+      "type": "string",
+      "maxLength": 40,
+      "title": "Id",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "DecideIn"
+   },
+   "ForgotIn": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "format": "email",
+      "title": "Email"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email"
+    ],
+    "title": "ForgotIn"
+   },
+   "GroupIn": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "maxLength": 60,
+      "minLength": 1,
+      "title": "Title"
+     },
+     "nntu_group": {
+      "type": "string",
+      "maxLength": 60,
+      "title": "Nntu Group",
+      "default": ""
+     },
+     "data": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data"
+     }
+    },
+    "type": "object",
+    "required": [
+     "title"
+    ],
+    "title": "GroupIn"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "ImapIn": {
+    "properties": {
+     "provider": {
+      "type": "string",
+      "pattern": "^(yandex|mailru|gmail|other)$",
+      "title": "Provider"
+     },
+     "login": {
+      "type": "string",
+      "maxLength": 254,
+      "title": "Login"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Password"
+     },
+     "host": {
+      "type": "string",
+      "maxLength": 120,
+      "title": "Host",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "provider",
+     "login",
+     "password"
+    ],
+    "title": "ImapIn"
+   },
+   "InviteIn": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "pattern": "^(deputy|viewer)$",
+      "title": "Role",
+      "default": "deputy"
+     }
+    },
+    "type": "object",
+    "title": "InviteIn"
+   },
+   "LoginIn": {
+    "properties": {
+     "login": {
+      "type": "string",
+      "maxLength": 254,
+      "title": "Login"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 200,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "login",
+     "password"
+    ],
+    "title": "LoginIn"
+   },
+   "RegisterIn": {
+    "properties": {
+     "login": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 3,
+      "title": "Login"
+     },
+     "email": {
+      "type": "string",
+      "format": "email",
+      "title": "Email"
+     },
+     "name": {
+      "type": "string",
+      "maxLength": 120,
+      "title": "Name",
+      "default": ""
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 8,
+      "title": "Password"
+     },
+     "consent": {
+      "type": "boolean",
+      "title": "Consent"
+     }
+    },
+    "type": "object",
+    "required": [
+     "login",
+     "email",
+     "password",
+     "consent"
+    ],
+    "title": "RegisterIn"
+   },
+   "ResetIn": {
+    "properties": {
+     "token": {
+      "type": "string",
+      "title": "Token"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 8,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "token",
+     "password"
+    ],
+    "title": "ResetIn"
+   },
+   "UserOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "login": {
+      "type": "string",
+      "title": "Login"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "groups": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Groups",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "login",
+     "email",
+     "name"
+    ],
+    "title": "UserOut"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}
