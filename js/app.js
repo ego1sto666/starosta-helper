@@ -269,7 +269,7 @@
   /* ---------- состояние экрана ---------- */
   const S = { schedDate: null, journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
     groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
-    tasksView: "tasks", worksDone: false, examsPast: false };
+    tasksView: "tasks", studyView: "works", worksDone: false, examsPast: false };
 
   /* ---------- общие куски разметки ---------- */
   function donut(parts, size, w, center, label, anim = true) {
@@ -667,7 +667,7 @@
     const exam = DB.exams.filter(x => parseISO(x.date) >= TODAY).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))[0];
     const examN = exam && daysBetween(TODAY, parseISO(exam.date));
     const notices = [
-      exam && examN <= 21 && `<a class="card card--tap tip tip--link tip--exam" href="#tasks/exams">${ic("exam")}<div class="tip__body"><b>${esc(exam.kind || "Экзамен")}: ${esc(baseSubject(exam.subject))} — ${whenText(examN)}</b><span>${fmtShort(parseISO(exam.date))}${exam.time ? `, ${esc(exam.time)}` : ""}${exam.room ? ` · ${esc(exam.room)}` : ""}</span></div>${ic("right", "tip__arrow")}</a>`,
+      exam && examN <= 21 && `<a class="card card--tap tip tip--link tip--exam" href="#study/exams">${ic("exam")}<div class="tip__body"><b>${esc(exam.kind || "Экзамен")}: ${esc(baseSubject(exam.subject))} — ${whenText(examN)}</b><span>${fmtShort(parseISO(exam.date))}${exam.time ? `, ${esc(exam.time)}` : ""}${exam.room ? ` · ${esc(exam.room)}` : ""}</span></div>${ic("right", "tip__arrow")}</a>`,
       risk.length && `<a class="card card--tap tip tip--link tip--risk" href="#stats" data-act="riskView">${ic("risk")}<div class="tip__body"><b>Риск недопуска: ${risk.length} ${plural(risk.length, ["студент", "студента", "студентов"])}</b><span>${esc(risk.slice(0, 3).map(x => shortName(x.s.name)).join(", "))}${risk.length > 3 ? ` и ещё ${risk.length - 3}` : ""} — посещаемость по предмету ниже ${riskPct()}%</span></div>${ic("right", "tip__arrow")}</a>`,
       bToday.length && `<div class="card tip tip--bday">${ic("cake")}<div class="tip__body"><b>Сегодня день рождения</b><span>${esc(bToday.map(x => x.s.name + (x.age ? ` (${x.age})` : "")).join(", "))}</span></div><button class="btn btn--primary btn--sm" data-act="copyText" data-t="${esc(bToday.map(x => greeting(x.s)).join("\n"))}">${ic("copy")}Поздравление</button></div>`,
       liveNews() && `<div class="card tip tip--live">${ic("calendar")}<div class="tip__body"><b>Изменения в расписании</b><span>На сайте НГТУ: ${LIVE.changes.length} ${plural(LIVE.changes.length, ["изменение", "изменения", "изменений"])} на ближайшие дни</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="live">Посмотреть</button></div>`,
@@ -1112,20 +1112,26 @@
     };
   };
 
-  /* ----- Дела ----- */
-  const TASK_VIEWS = [["tasks", "Дела"], ["works", "Сдачи"], ["funds", "Касса"], ["exams", "Сессия"]];
-  const tasksTabs = () => `<div class="seg seg--fit" role="tablist" aria-label="Раздел">${TASK_VIEWS.map(([v, n]) => `<button role="tab" aria-selected="${S.tasksView === v}" data-go="#tasks/${v}">${n}</button>`).join("")}</div>`;
+  /* ----- Учёба (сдачи работ, сессия) и внеучебка (дела, касса, события) ----- */
+  const STUDY_VIEWS = [["works", "Сдачи", "#study/works"], ["exams", "Сессия", "#study/exams"]];
+  const EXTRA_VIEWS = [["tasks", "Дела", "#tasks"], ["funds", "Касса", "#tasks/funds"], ["events", "События", "#events"]];
+  const viewTabs = (views, cur) => `<div class="seg seg--fit" role="tablist" aria-label="Раздел">${views.map(([v, n, h]) => `<button role="tab" aria-selected="${cur === v}" data-go="${h}">${n}</button>`).join("")}</div>`;
+  const studyTabs = () => viewTabs(STUDY_VIEWS, S.studyView), extraTabs = () => viewTabs(EXTRA_VIEWS, S.tasksView);
   const rub = n => `${(+n || 0).toLocaleString("ru-RU")} ₽`;
   // кто должен сдать работу (с учётом подгруппы предмета) и кто — деньги (вся группа)
   const checkList = (kind, it) => kind === "works" && it.subject ? roster(it.subject)[0] : students();
   const checkMap = (kind, it) => kind === "works" ? (it.done ||= {}) : (it.paid ||= {});
   function checkStats(kind, it) { const list = checkList(kind, it), m = checkMap(kind, it), ok = list.filter(s => m[s.id]); return { list, ok: ok.length, left: list.filter(s => !m[s.id]) }; }
 
+  SCREENS.study = (view) => {
+    if (STUDY_VIEWS.some(([v]) => v === view)) S.studyView = view;
+    return S.studyView === "exams" ? examsScreen() : worksScreen();
+  };
   SCREENS.tasks = (view) => {
-    if (view && TASK_VIEWS.some(([v]) => v === view)) S.tasksView = view;
-    if (S.tasksView === "works") return worksScreen();
+    // старые ссылки #tasks/works и #tasks/exams (ярлыки, закладки) ведут в «Учёбу»
+    if (view === "works" || view === "exams") { history.replaceState(null, "", `#study/${view}`); return SCREENS.study(view); }
+    S.tasksView = view === "funds" ? "funds" : "tasks";
     if (S.tasksView === "funds") return fundsScreen();
-    if (S.tasksView === "exams") return examsScreen();
     const done = S.taskTab === "done";
     const items = DB.tasks.filter(t => !!t.done === done && (!S.taskKind || t.kind === S.taskKind))
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.created || 0) - (b.created || 0));
@@ -1136,12 +1142,12 @@
       <button class="check" data-act="taskDone" data-id="${esc(t.id)}" aria-label="${t.done ? "Вернуть в работу" : "Отметить выполненным"}">${ic(t.done ? "check" : "uncheck")}</button></article>`;
     return {
       title: "Дела", sub: `${nOpen} ${plural(nOpen, ["активное", "активных", "активных"])}`, nav: "tasks", fab: "task",
-      html: `${tasksTabs()}
+      html: `${extraTabs()}
         <div class="filter" role="tablist"><button aria-pressed="${!done}" data-act="taskTab" data-t="open">Активные · ${nOpen}</button><button aria-pressed="${done}" data-act="taskTab" data-t="done">Готово · ${nDone}</button></div>
         <div class="filter" role="group" aria-label="Тип">${[["", "Все", ""], ...Object.entries(TASK_KINDS).map(([k, v]) => [k, k, v.i])].map(([k, n, i]) =>
           `<button aria-pressed="${S.taskKind === k}" data-act="taskKind" data-k="${esc(k)}">${i ? ic(i) : ""}${n}</button>`).join("")}</div>
         ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
-          : empty("tasks", done ? "Здесь пусто" : "Дел нет", done ? "Выполненные дела появятся здесь." : "Нажмите «+», чтобы добавить дедлайн, объявление или напоминание.")}
+          : empty("tasks", done ? "Здесь пусто" : "Дел нет", done ? "Выполненные дела появятся здесь." : "Нажмите «+», чтобы добавить дедлайн, объявление или напоминание. Лабораторные и рефераты — в разделе «Учёба».")}
         ${done && items.length ? `<button class="btn btn--danger btn--block" data-act="clearDone">${ic("delete")}Удалить выполненные</button>` : ""}`,
     };
   };
@@ -1157,8 +1163,8 @@
       ${bar(list.length ? ok / list.length * 100 : 0, left.length ? "var(--primary)" : "var(--ok)", true)}
       <div class="work__foot">${w.due ? dueHtml({ due: w.due, done: !left.length }) : `<div class="due due--ok">без срока</div>`}${left.length ? `<span class="muted">не сдали: ${left.length}</span>` : `<span style="color:var(--ok-ink)">${ic("tick")} сдали все</span>`}</div></a>`;
     return {
-      title: "Сдачи", sub: `${nOpen} ${plural(nOpen, ["работа собирается", "работы собираются", "работ собираются"])}`, nav: "tasks", fab: "work",
-      html: `${tasksTabs()}
+      title: "Сдачи", sub: `${nOpen} ${plural(nOpen, ["работа собирается", "работы собираются", "работ собираются"])}`, nav: "study", fab: "work",
+      html: `${studyTabs()}
         <div class="filter"><button aria-pressed="${!done}" data-act="worksDone" data-v="0">Собираю · ${nOpen}</button><button aria-pressed="${done}" data-act="worksDone" data-v="1">Сдали все · ${all.length - nOpen}</button></div>
         ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
           : empty("works", done ? "Пока ничего" : "Работ нет", done ? "Работы, которые сдали все, появятся здесь." : "Нажмите «+» и добавьте лабораторную, реферат или домашку — дальше отмечайте, кто сдал, одним нажатием.")}`,
@@ -1176,7 +1182,7 @@
     const total = all.reduce((a, x) => a + x.ok * (+x.f.amount || 0), 0);
     return {
       title: "Касса", sub: all.length ? `собрано всего ${rub(total)}` : "сборы денег группы", nav: "tasks", fab: "fund",
-      html: `${tasksTabs()}
+      html: `${extraTabs()}
         ${all.length ? `<div class="grid grid--cols">${all.map(card).join("")}</div>`
           : empty("cash", "Сборов пока нет", "Нажмите «+», чтобы начать сбор: на подарок, распечатки, мероприятие. Отмечайте, кто сдал, — сумма посчитается сама.")}`,
     };
@@ -1197,10 +1203,10 @@
     const text = DB.exams.filter(x => parseISO(x.date) >= TODAY).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")))
       .map(x => `${fmtDate(parseISO(x.date))}${x.time ? " " + x.time : ""} — ${x.kind || "Экзамен"}: ${baseSubject(x.subject)}${x.room ? ", " + x.room : ""}`).join("\n");
     return {
-      title: "Сессия", sub: nUp ? `впереди: ${nUp}` : "экзамены и зачёты", nav: "tasks", fab: "exam",
+      title: "Сессия", sub: nUp ? `впереди: ${nUp}` : "экзамены и зачёты", nav: "study", fab: "exam",
       actions: nUp ? [["chat", "Скопировать расписание сессии для чата", "copyText", "", ""]] : [],
       after: () => { const b = $('#topbar [data-act="copyText"]'); if (b) b.dataset.t = "Расписание сессии:\n" + text; },
-      html: `${tasksTabs()}
+      html: `${studyTabs()}
         <div class="filter"><button aria-pressed="${!past}" data-act="examsPast" data-v="0">Впереди · ${nUp}</button><button aria-pressed="${past}" data-act="examsPast" data-v="1">Прошли</button></div>
         ${list.length ? `<div class="grid grid--cols">${list.map(card).join("")}</div>`
           : empty("exam", past ? "Здесь пусто" : "Сессия не запланирована", past ? "Прошедшие экзамены и зачёты появятся здесь." : "Нажмите «+», чтобы добавить экзамен, зачёт или консультацию. На главной появится обратный отсчёт.")}`,
@@ -1209,14 +1215,14 @@
 
   /* ----- Отметки «сдал / не сдал» по работе или сбору ----- */
   SCREENS.check = (kind, id) => {
-    const isW = kind === "works", it = (isW ? DB.works : DB.funds).find(x => x.id === id), back = `#tasks/${isW ? "works" : "funds"}`;
-    if (!it) return { title: "Не найдено", back, nav: "tasks", html: empty(isW ? "works" : "cash", "", "Возможно, запись удалили.") };
+    const isW = kind === "works", it = (isW ? DB.works : DB.funds).find(x => x.id === id), back = isW ? "#study/works" : "#tasks/funds", navId = isW ? "study" : "tasks";
+    if (!it) return { title: "Не найдено", back, nav: navId, html: empty(isW ? "works" : "cash", "", "Возможно, запись удалили.") };
     const { list, ok, left } = checkStats(kind, it), m = checkMap(kind, it);
     const verb = isW ? "сдали" : "сдали деньги";
     const text = left.length ? `${it.title}${isW && it.subject ? ` (${baseSubject(it.subject)})` : ""}${!isW ? ` — по ${rub(it.amount)}` : ""}${it.due ? `, срок ${fmtDate(parseISO(it.due))}` : ""}.\nЕщё не ${verb}: ${left.map(s => s.name).join(", ")}.`
       : `${it.title}: ${isW ? "сдали все" : "все сдали, спасибо"}!`;
     return {
-      title: it.title, sub: `${isW ? (it.subject || "работа") : `по ${rub(it.amount)} с человека`} · ${verb} ${ok} из ${list.length}`, back, nav: "tasks", focus: true,
+      title: it.title, sub: `${isW ? (it.subject || "работа") : `по ${rub(it.amount)} с человека`} · ${verb} ${ok} из ${list.length}`, back, nav: navId, focus: true,
       actions: [["edit", "Изменить", "form", isW ? "work" : "fund", it.id]],
       actionbar: `<button class="btn btn--ok" data-act="checkAll" data-k="${kind}" data-id="${esc(it.id)}">${ic("tick")}Все ${isW ? "сдали" : "сдали"}</button>${copyBtn(text, "Должники", "btn btn--primary")}`,
       html: `
@@ -1231,14 +1237,15 @@
 
   /* ----- События ----- */
   SCREENS.events = () => {
+    S.tasksView = "events";
     const past = S.showPast, N = DB.students.length;
     const items = DB.events.filter(e => { const d = eventDate(e); return d && (past ? d < TODAY : d >= TODAY); })
       .sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) * (past ? -1 : 1));
     const nUp = DB.events.filter(e => { const d = eventDate(e); return d && d >= TODAY; }).length;
     return {
-      title: "События", sub: `${nUp} ${plural(nUp, ["событие", "события", "событий"])} впереди`, nav: "events", fab: "event",
-      html: `
-        <div class="seg seg--fit" role="tablist"><button role="tab" aria-selected="${!past}" data-act="showPast" data-v="0">Предстоящие</button><button role="tab" aria-selected="${past}" data-act="showPast" data-v="1">Прошедшие</button></div>
+      title: "События", sub: `${nUp} ${plural(nUp, ["событие", "события", "событий"])} впереди`, nav: "tasks", fab: "event",
+      html: `${extraTabs()}
+        <div class="filter"><button aria-pressed="${!past}" data-act="showPast" data-v="0">Предстоящие · ${nUp}</button><button aria-pressed="${past}" data-act="showPast" data-v="1">Прошедшие</button></div>
         ${items.length ? `<div class="grid grid--cols">${items.map(e => {
           const c = eventKind(e), d = eventDate(e), g = new Set(e.going || []), n = daysBetween(TODAY, d);
           const faces = students().filter(s => g.has(s.id)).slice(0, 4).map(s => avatar(s.name)).join("");
@@ -1330,7 +1337,7 @@
       });
     const created = Math.floor(Date.now() / 1000), map = list => Object.fromEntries(list.map(id => [id, 1]));
     DB.tasks = [
-      { id: newId(), kind: "Дедлайн", title: "Отчёт по лабораторной №3", subject: "Программирование", due: day(4), text: "", done: false, created },
+      { id: newId(), kind: "Дедлайн", title: "Анкеты на заселение в общежитие — в профком", subject: "", due: day(4), text: "", done: false, created },
       { id: newId(), kind: "Объявление", title: "Собрание группы после 3-й пары", subject: "", due: day(1), text: "Обсудим посвящение и сбор денег", done: false, created },
     ];
     DB.works = [
@@ -1382,13 +1389,15 @@
   }
 
   /* ================= КАРКАС ================= */
-  const NAV = [["home", "Сегодня", "home"], ["schedule", "Пары", "schedule"], ["journal", "Журнал", "journal"], ["group", "Группа", "group"], ["tasks", "Дела", "tasks"], ["events", "События", "party"]];
+  const NAV = [["home", "Сегодня", "home"], ["schedule", "Пары", "schedule"], ["journal", "Журнал", "journal"], ["group", "Группа", "group"], ["study", "Учёба", "exam"], ["tasks", "Внеучебка", "party"]];
   const app = $(".app"), view = $("#view"), topbar = $("#topbar"), nav = $("#nav"), fab = $("#fab"), actionbar = $("#actionbar");
   let lastRoute = "", current = null;
 
+  // «Учёба» и «Внеучебка» открываются на той вкладке, где были в прошлый раз
+  const navHref = id => id === "study" ? `#study/${S.studyView}` : id === "tasks" ? (EXTRA_VIEWS.find(v => v[0] === S.tasksView) || EXTRA_VIEWS[0])[2] : `#${id}`;
   function renderNav(active) {
     nav.innerHTML = `<a class="nav__brand" href="#home"><span class="brand__logo">${ic("school")}</span>Помощник<br>старосты</a>` +
-      NAV.map(([id, n, i]) => `<a class="nav__item" href="#${id}"${active === id ? ' aria-current="page"' : ""}>${ic(i)}<span>${n}</span></a>`).join("") +
+      NAV.map(([id, n, i]) => `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""}>${ic(i)}<span>${n}</span></a>`).join("") +
       `<a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""}>${ic("cog")}<span>Настройки</span></a>`;
   }
   function renderTopbar(scr) {
@@ -1829,7 +1838,7 @@
         if (!trim(v.title)) return err("Укажите, что сдаём");
         const w = DB.works.find(x => x.id === id) || { id: newId(), created: Date.now(), done: {} };
         Object.assign(w, { title: trim(v.title), subject: trim(v.subject).replace(/\s+/g, " "), due: v.due || "" });
-        if (!id) { DB.works.push(w); msg = "Работа добавлена — отмечайте, кто сдал"; go = `#check/works/${w.id}`; S.tasksView = "works"; }
+        if (!id) { DB.works.push(w); msg = "Работа добавлена — отмечайте, кто сдал"; go = `#check/works/${w.id}`; S.studyView = "works"; }
         break;
       }
       case "fund": {
@@ -1845,7 +1854,7 @@
         if (!parseISO(v.date)) return err("Выберите дату");
         const x = DB.exams.find(e => e.id === id) || { id: newId() };
         Object.assign(x, { subject: trim(v.subject), kind: v.kind, date: v.date, time: v.time || "", room: trim(v.room), teacher: trim(v.teacher), note: trim(v.note) });
-        if (!id) { DB.exams.push(x); msg = "Добавлено в сессию"; S.tasksView = "exams"; S.examsPast = parseISO(v.date) < TODAY; }
+        if (!id) { DB.exams.push(x); msg = "Добавлено в сессию"; S.studyView = "exams"; S.examsPast = parseISO(v.date) < TODAY; }
         break;
       }
       case "sick": {
@@ -2069,9 +2078,9 @@
       const kind = el.dataset.k, it = (kind === "works" ? DB.works : DB.funds).find(x => x.id === el.dataset.id), m = checkMap(kind, it);
       checkList(kind, it).forEach(s => { m[s.id] = 1; }); persist(); render(true); toast(kind === "works" ? "Все сдали" : "Все сдали деньги");
     },
-    delWork: el => delAndBack(el, "works", "Удалить работу и все отметки по ней?", "#tasks/works"),
+    delWork: el => delAndBack(el, "works", "Удалить работу и все отметки по ней?", "#study/works"),
     delFund: el => delAndBack(el, "funds", "Удалить сбор и все отметки по нему?", "#tasks/funds"),
-    delExam: el => delAndBack(el, "exams", "Удалить из сессии?", "#tasks/exams"),
+    delExam: el => delAndBack(el, "exams", "Удалить из сессии?", "#study/exams"),
     delSick: el => { if (confirmed(el)) PHOTOS.del(el.dataset.id); delAndBack(el, "sick", "Удалить больничный? Отметки «У» в журнале останутся.", null); },
     sickAdd: el => { S.sickFor = el.dataset.sid; openSheet(FORMS.sick()); },
     sickPhoto: async el => {

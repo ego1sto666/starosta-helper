@@ -26,12 +26,15 @@ a { color: inherit; text-decoration: none; }
 .view > * + .section-head { margin-top: 24px; }
 
 /* ---------- шапка ---------- */
-.topbar { position: sticky; top: 0; z-index: 20; height: var(--h-header); display: grid;
+/* высота = сама шапка + вырез/статус-бар телефона, иначе на iPhone и Android без рамок текст вылезает из-под фона */
+.topbar { position: sticky; top: 0; z-index: 20; height: calc(var(--h-header) + env(safe-area-inset-top)); display: grid;
   grid-template-columns: 52px 1fr auto; align-items: center; gap: 8px;
   padding: env(safe-area-inset-top) max(var(--gutter), calc((100% - 1320px) / 2 + var(--gutter))) 0;
-  transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+  transition: box-shadow var(--dur) var(--ease); }
+/* фон появляется сразу, без плавного перехода: иначе первые доли секунды текст проезжает под прозрачной шапкой */
 .topbar.is-stuck { background: var(--header-bg); -webkit-backdrop-filter: var(--glass);
   backdrop-filter: var(--glass); box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 55%, transparent); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .topbar.is-stuck { background: var(--bg); } }
 .topbar__titles { text-align: center; min-width: 0; }
 .topbar__title { font-size: var(--fs-title); font-weight: var(--fw-bold); letter-spacing: var(--tracking-tight); color: var(--title);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -363,7 +366,7 @@ a { color: inherit; text-decoration: none; }
 @keyframes pop { from { transform: scale(.9); } }
 
 /* липкая сводка отметки (телефон) */
-.markbar { position: sticky; top: var(--h-header); z-index: 15; display: flex; align-items: center; gap: 12px;
+.markbar { position: sticky; top: calc(var(--h-header) + env(safe-area-inset-top)); z-index: 15; display: flex; align-items: center; gap: 12px;
   padding: 10px 14px; border-radius: var(--radius-card); background: var(--nav-bg); box-shadow: var(--shadow-card);
   -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass); }
 .markbar__count { font-size: 22px; font-weight: var(--fw-black); font-variant-numeric: tabular-nums; line-height: 1; }
@@ -552,7 +555,7 @@ a { color: inherit; text-decoration: none; }
   .nav__item .mdi { font-size: 26px; }
   .nav .nav__item--settings { display: flex; margin-top: auto; }
   .app.is-focus .nav { display: flex; }
-  .topbar { grid-template-columns: auto 1fr auto; height: 96px; }
+  .topbar { grid-template-columns: auto 1fr auto; height: calc(96px + env(safe-area-inset-top)); }
   .topbar__titles { text-align: left; }
   .topbar__title { font-size: 32px; font-weight: var(--fw-black); }
   .topbar__sub { font-size: 13.5px; }

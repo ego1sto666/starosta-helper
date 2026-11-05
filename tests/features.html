@@ -32,7 +32,7 @@ async function run() {
   await load(); setData(real); await load();
 
   // 1. сдачи
-  await go("#tasks/works");
+  await go("#study/works");
   log("1 tabs:", $$("#view .seg button").map(b => b.textContent).join(" | "), "| fab:", D().getElementById("fab").dataset.kind, "| empty:", text("#view .empty b"));
   click("#fab"); await until(() => $('form[data-form="work"]'), 2000, "work form");
   let f = $('form[data-form="work"]'); f.title.value = "Лабораторная №3"; f.subject.value = "Информатика (подгруппа 3)"; f.due.value = iso(3); f.requestSubmit();
@@ -42,7 +42,7 @@ async function run() {
   log("1 after 2 toggles:", text(".topbar__sub"));
   click('#actionbar [data-act="copyText"]'); await sleep(150); log("1 copy:", clip.replace(/\n/g, " / ").slice(0, 160));
   click('#actionbar [data-act="checkAll"]'); await sleep(200); log("1 all:", text(".topbar__sub"));
-  await go("#tasks/works"); log("1 list (open):", text("#view .empty b") || "-", "| done tab:", $$('#view .filter button')[1].textContent);
+  await go("#study/works"); log("1 list (open):", text("#view .empty b") || "-", "| done tab:", $$('#view .filter button')[1].textContent);
 
   // 2. касса
   await go("#tasks/funds"); click("#fab"); await until(() => $('form[data-form="fund"]'), 2000);
@@ -53,7 +53,7 @@ async function run() {
   await go("#tasks/funds"); log("2 card:", text("#view .work"));
 
   // 3. сессия
-  await go("#tasks/exams"); click("#fab"); await until(() => $('form[data-form="exam"]'), 2000);
+  await go("#study/exams"); click("#fab"); await until(() => $('form[data-form="exam"]'), 2000);
   f = $('form[data-form="exam"]'); f.subject.value = "Математика"; f.date.value = iso(10); f.time.value = "09:00"; f.room.value = "6125, корп. 6"; f.requestSubmit(); await sleep(300);
   log("3 exams:", text("#view .event"));
   await go("#home"); log("3 home tips:", $$(".tip b").map(b => b.textContent).join(" | "));
