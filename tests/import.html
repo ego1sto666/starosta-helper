@@ -90,14 +90,14 @@ async function run() {
   await load("#home");
   log("4 home tips after backup:", $$(".tip b").map(b => b.textContent).join(" | ") || "—");
 
-  // 5. семестры и звонки
+  // 5. период занятий и звонки
   await load("#settings");
-  click('[data-act="form"][data-f="semesters"]');
-  let sf = $('form[data-form="semesters"]');
-  const keep = sf.end0.value; sf.end0.value = "2026-08-01"; submit(sf);
-  await sleep(150); log("5 bad semester:", text(".form-err"));
-  sf.end0.value = keep; sf.odd1.checked = false; submit(sf);
-  await sleep(200); log("5 semesters saved:", JSON.stringify(data().settings.semesters));
+  click('[data-act="form"][data-f="term"]');
+  let sf = $('form[data-form="term"]');
+  const keep = sf.end.value; sf.end.value = "2026-08-01"; submit(sf);
+  await sleep(150); log("5 bad term:", text(".form-err"));
+  const was = sf.parity.value; sf.end.value = keep; sf.parity.value = was === "odd" ? "even" : "odd"; submit(sf);
+  await sleep(200); log("5 term saved:", JSON.stringify(data().settings.term), "| семестры остались:", JSON.stringify(data().settings.semesters ?? null), "| эта неделя была", was);
   click('[data-act="form"][data-f="bells"]');
   let bf = $('form[data-form="bells"]');
   bf.s1.value = "09:00"; submit(bf); await sleep(150); log("5 bad bells:", text(".form-err"));

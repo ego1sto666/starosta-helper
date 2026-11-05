@@ -1,7 +1,7 @@
 /* Помощник старосты — приложение для старост НГТУ в браузере.
    Данные хранятся только в этом браузере (localStorage), формат — тот же data.json,
    что был у программы на ПК, поэтому старый файл можно просто загрузить.
-   Правила (семестры, недели, подгруппы, отметки) перенесены из прежней Kivy-версии. */
+   Правила (недели, подгруппы, отметки) перенесены из прежней Kivy-версии. */
 (() => {
   "use strict";
 
@@ -91,7 +91,6 @@
     d.settings ??= {};
     d.settings.group ??= "";
     if (!Array.isArray(d.settings.bells) || !d.settings.bells.length) d.settings.bells = ["08:00-09:35", "09:45-11:20", "11:35-13:10", "13:40-15:15", "15:25-17:00"];
-    if (!Array.isArray(d.settings.semesters)) d.settings.semesters = [];
     // works — сдачи работ, funds — касса, exams — сессия, sick — больничные
     for (const k of ["students", "teachers", "lessons", "tasks", "events", "works", "funds", "exams", "sick"]) if (!Array.isArray(d[k])) d[k] = [];
     if (!d.attendance || typeof d.attendance !== "object") d.attendance = {};
@@ -99,10 +98,16 @@
     if (!d.overrides || typeof d.overrides !== "object" || Array.isArray(d.overrides)) d.overrides = {};
     // разовые пары (перенесённые и добавленные): { id, date, subject, num, kind, room, teacher, from?, src }
     if (!Array.isArray(d.oneoff)) d.oneoff = [];
-    const prev = DB; DB = d;
-    const cur = semInfo(TODAY).num;
-    DB = prev;
-    d.lessons.forEach(l => { l.sem ??= cur; });
+    // раньше было два семестра: берём тот, что идёт сейчас или начнётся следующим, и только его пары
+    if (Array.isArray(d.settings.semesters)) {
+      const old = d.settings.semesters.map((x, i) => ({ n: i + 1, a: parseISO(x.start), z: parseISO(x.end), odd: x.first_week_odd !== false })).filter(x => x.a && x.z);
+      const pick = old.find(x => x.a <= TODAY && TODAY <= x.z) || old.filter(x => x.a > TODAY).sort((x, y) => x.a - y.a)[0];
+      if (pick && !d.settings.term) d.settings.term = { start: key(pick.a), end: key(pick.z), first_week_odd: pick.odd };
+      const n = pick ? pick.n : (TODAY.getMonth() >= 7 || TODAY.getMonth() === 0 ? 1 : 2);
+      if (new Set(d.lessons.map(l => l.sem || 1)).size > 1) d.lessons = d.lessons.filter(l => (l.sem || 1) === n);
+      delete d.settings.semesters;
+    }
+    d.lessons.forEach(l => { delete l.sem; });
     return d;
   }
 
@@ -129,42 +134,34 @@
     return !last || Date.now() - last > BACKUP_DAYS * DAY;
   }
 
-  /* ---------- звонки, семестры, недели (как Store в main.py) ---------- */
+  /* ---------- звонки, период занятий, недели ---------- */
   const bells = () => DB.settings.bells.map(b => { const [a, z] = String(b).split("-"); return [a || "", z || ""]; });
   const lessonSpan = l => (l.start && l.end) ? [l.start, l.end] : (bells()[(l.num || 0) - 1] || ["", ""]);
-  const academicYear = d => (d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1);
-  function shiftYear(d, k) { const r = new Date(d.getFullYear() + k, d.getMonth(), d.getDate()); return r.getMonth() === d.getMonth() ? r : new Date(d.getFullYear() + k, d.getMonth(), 28); }
-  const defaultSems = ay => [[new Date(ay, 8, 1), new Date(ay, 11, 31), true], [new Date(ay + 1, 1, 9), new Date(ay + 1, 5, 30), true]];
-  function semesterDates(ay) {
-    const dflt = defaultSems(academicYear(TODAY));
-    const base = [0, 1].map(i => {
-      const sm = DB.settings.semesters[i] || {}, a = parseISO(sm.start), z = parseISO(sm.end);
-      return a && z ? [a, z, sm.first_week_odd !== false] : [dflt[i][0], dflt[i][1], sm.first_week_odd !== false];
-    });
-    if (ay == null) return base;
-    const k = ay - academicYear(base[0][0]);
-    return base.map(([a, z, o]) => [shiftYear(a, k), shiftYear(z, k), o]);
+  // период занятий: расписание в вузе известно на один семестр — его первый и последний день и чётность недель
+  function defaultTerm(d) {
+    const y = d.getFullYear(), m = d.getMonth();
+    if (m >= 7) return [new Date(y, 8, 1), new Date(y, 11, 31)];
+    if (m === 0) return [new Date(y - 1, 8, 1), new Date(y - 1, 11, 31)];
+    return [new Date(y, 1, 9), new Date(y, 5, 30)];
   }
-  function semInfo(d) {
-    const s = semesterDates(academicYear(d)), num = d < s[1][0] ? 1 : 2;
-    const [start, end, firstOdd] = s[num - 1];
-    const active = d >= start && d <= end;
+  function term() {
+    const t = DB.settings.term || {}, [da, dz] = defaultTerm(TODAY);
+    return { start: parseISO(t.start) || da, end: parseISO(t.end) || dz, firstOdd: t.first_week_odd !== false };
+  }
+  function weekInfo(d) {
+    const { start, end, firstOdd } = term(), active = d >= start && d <= end;
     const week = Math.floor(daysBetween(monday(start), monday(d)) / 7) + 1;
     const odd = ((((week % 2) + 2) % 2) === 1) === firstOdd;
-    let label;
-    if (active) label = `${num} семестр · ${week}-я неделя · ${odd ? "нечётная" : "чётная"}`;
-    else if (num === 1 && d > end) label = "Зимняя сессия и каникулы";
-    else if (num === 1) label = `До начала 1 семестра — ${fmtDate(start)}`;
-    else label = "Летняя сессия и каникулы";
-    return { num, start, end, active, week, parity: odd ? "odd" : "even", label };
+    const label = active ? `${week}-я неделя · ${odd ? "нечётная" : "чётная"}` : d < start ? `Занятия начнутся ${fmtDate(start)}` : `Занятия закончились ${fmtDate(end)}`;
+    return { start, end, active, week, parity: odd ? "odd" : "even", label };
   }
   const byTime = (a, b) => (lessonSpan(a)[0] || "99").localeCompare(lessonSpan(b)[0] || "99") || (a.num || 0) - (b.num || 0) || !!a.cancelled - !!b.cancelled;
   // все пары дня с учётом изменений: постоянные (с отменами и заменами) + разовые
   // у отменённых cancelled: true; у постоянных с изменениями — ov (запись из overrides)
   function dayPlan(d) {
-    const info = semInfo(d), k = key(d), out = [];
+    const info = weekInfo(d), k = key(d), out = [];
     if (info.active) DB.lessons.forEach(l => {
-      if ((l.sem || 1) !== info.num || l.day !== pyDay(d) || !["all", info.parity].includes(l.week || "all")) return;
+      if (l.day !== pyDay(d) || !["all", info.parity].includes(l.week || "all")) return;
       const o = DB.overrides[`${k}|${l.id}`];
       if (!o) return out.push(l);
       out.push({ ...l, room: o.room ?? l.room, teacher: o.teacher ?? l.teacher, cancelled: !!o.cancel, ov: o, tpl: l });
@@ -243,27 +240,27 @@
     if (nowMin() >= toMin(b)) return "live";
     return "future";
   }
-  // записи посещаемости за период: "1" | "2" | "year" (текущий учебный год)
+  // записи посещаемости за период: "term" — весь период занятий, "ГГГГ-ММ" — месяц
   function periodRecords(period, subject) {
-    const ay = academicYear(TODAY);
-    return Object.entries(DB.attendance).map(([k, r]) => ({ k, r, d: parseISO(k.split("|")[0]) })).filter(({ d, r }) => {
-      if (!d || academicYear(d) !== ay) return false;
-      if (period !== "year" && semInfo(d).num !== Number(period)) return false;
+    const { start, end } = term();
+    return Object.entries(DB.attendance).map(([k, r]) => ({ k, r, d: parseISO(k.split("|")[0]) })).filter(({ k, d, r }) => {
+      if (!d) return false;
+      if (period === "term" ? d < start || d > end : k.slice(0, 7) !== period) return false;
       return !subject || baseSubject(r.subject) === subject;
     });
   }
   function collectStats(recs, sid) {
-    const all = [], bySubj = {}, byWeek = {}, per = {}, misses = [];
+    const all = [], bySubj = {}, byWeek = {}, bySlot = {}, per = {}, misses = [];
     recs.forEach(({ k, r, d }) => {
-      const info = semInfo(d), wk = `${info.num}-${String(info.week).padStart(2, "0")}`;
+      const wk = key(monday(d)), slot = `${d.getDay()}|${r.num || 0}`;
       Object.entries(r.marks || {}).forEach(([id, m]) => {
         if (!m || (sid && id !== sid)) return;
-        all.push(m); (bySubj[baseSubject(r.subject)] ||= []).push(m); (byWeek[wk] ||= []).push(m); (per[id] ||= []).push(m);
+        all.push(m); (bySubj[baseSubject(r.subject)] ||= []).push(m); (byWeek[wk] ||= []).push(m); (bySlot[slot] ||= []).push(m); (per[id] ||= []).push(m);
         if (sid && m !== "+") misses.push({ k, r, d, m });
       });
     });
     const cnt = v => all.filter(m => m === v).length;
-    return { all, here: cnt("+"), abs: cnt("н"), exc: cnt("у"), pct: attendancePct(all), bySubj, byWeek, per, misses };
+    return { all, here: cnt("+"), abs: cnt("н"), exc: cnt("у"), pct: attendancePct(all), bySubj, byWeek, bySlot, per, misses };
   }
 
   /* ---------- состояние экрана ---------- */
@@ -432,7 +429,7 @@
   /* ---------- риск недопуска: процент по предмету ниже порога ---------- */
   const riskPct = () => +(DB.settings.risk_pct ?? 70);
   function riskList() {
-    const recs = periodRecords(String(semInfo(TODAY).num)), by = {};
+    const recs = periodRecords("term"), by = {};
     recs.forEach(({ r }) => Object.entries(r.marks || {}).forEach(([sid, m]) => { if (m) ((by[sid] ||= {})[baseSubject(r.subject)] ||= []).push(m); }));
     return students().map(s => {
       const subs = Object.entries(by[s.id] || {}).map(([subj, ms]) => ({ subj, pct: attendancePct(ms), abs: ms.filter(m => m === "н").length, n: ms.length }))
@@ -478,30 +475,29 @@
   function nntuLessons(res) {
     const map = new Map();
     res.weeks.forEach(w => {
-      const info = semInfo(addDays(w.monday, 2));
+      const info = weekInfo(addDays(w.monday, 2));
       w.lessons.forEach(x => {
         const k = `${x.day}|${x.num}|${nameKey(x.subject)}`;
-        const e = map.get(k) || { l: x, par: new Set(), sem: info.num };
+        const e = map.get(k) || { l: x, par: new Set() };
         e.par.add(info.parity); map.set(k, e);
       });
     });
     const both = res.weeks.length > 1;
-    return [...map.values()].map(({ l, par, sem }) => ({ subject: l.subject, day: l.day, num: l.num, week: both && par.size === 1 ? [...par][0] : "all",
-      kind: l.kind, room: l.room, teacher: l.teacher, sem, ...(l.start ? { start: l.start, end: l.end } : {}) }));
+    return [...map.values()].map(({ l, par }) => ({ subject: l.subject, day: l.day, num: l.num, week: both && par.size === 1 ? [...par][0] : "all",
+      kind: l.kind, room: l.room, teacher: l.teacher, ...(l.start ? { start: l.start, end: l.end } : {}) }));
   }
   const NNTU_FIELDS = ["week", "kind", "room", "teacher", "start", "end"];
   // что изменится: совпавшие пары сохраняют id — к нему привязаны отметки в журнале
   function nntuPlan(res) {
-    const fresh = nntuLessons(res), sems = [...new Set(fresh.map(l => l.sem))];
-    const old = DB.lessons.filter(l => sems.includes(l.sem || 1));
-    const k = l => `${l.sem || 1}|${l.day}|${l.num}|${nameKey(l.subject)}`;
+    const fresh = nntuLessons(res), old = DB.lessons;
+    const k = l => `${l.day}|${l.num}|${nameKey(l.subject)}`;
     const used = new Set(), pair = new Map();
     for (const exact of [true, false]) fresh.forEach((n, i) => {
       if (pair.has(i)) return;
       const o = old.find(o => !used.has(o) && k(o) === k(n) && (!exact || (o.week || "all") === n.week));
       if (o) { used.add(o); pair.set(i, o); }
     });
-    const plan = { group: res.group, sems, add: [], upd: [], del: old.filter(o => !used.has(o)), same: 0, bells: null };
+    const plan = { group: res.group, add: [], upd: [], del: old.filter(o => !used.has(o)), same: 0, bells: null };
     fresh.forEach((n, i) => {
       const o = pair.get(i);
       if (!o) return plan.add.push(n);
@@ -625,7 +621,7 @@
 
   /* ----- Сегодня ----- */
   SCREENS.home = () => {
-    const info = semInfo(TODAY), today = dayLessons(TODAY);
+    const info = weekInfo(TODAY), today = dayLessons(TODAY);
     const live = today.find(l => lessonState(l, TODAY) === "live");
     const next = today.find(l => lessonState(l, TODAY) === "future" && lessonSpan(l)[0]);
     const open = DB.tasks.filter(t => !t.done);
@@ -708,7 +704,7 @@
   // старые ссылки #schedule ведут в журнал
   SCREENS.schedule = () => { history.replaceState(null, "", "#journal"); return SCREENS.journal(); };
   SCREENS.journal = () => {
-    const d = S.journalDate ||= TODAY, list = dayLessons(d), isToday = same(d, TODAY), info = semInfo(d), mon = monday(d);
+    const d = S.journalDate ||= TODAY, list = dayLessons(d), isToday = same(d, TODAY), info = weekInfo(d), mon = monday(d);
     const live = activeOnly(list), marked = live.filter(l => DB.attendance[attKey(d, l.id)]).length;
     const days = [0, 1, 2, 3, 4, 5].map(i => addDays(mon, i));
     const slotsOf = x => new Set(lessonsOn(x).map(l => lessonSpan(l)[0] + l.num)).size;
@@ -726,11 +722,11 @@
     const bellsCard = `<section class="card"><div class="card__head">${ic("clock")}<h3>Звонки</h3></div>
       <div class="mini">${bl.map((x, i) => `<div class="mini__row"><b class="num" style="width:22px;color:var(--primary-ink)">${i + 1}</b><div class="mini__body num">${x[0]} – ${x[1]}</div></div>`).join("")}</div>
       <button class="link" style="margin-top:8px" data-act="form" data-f="bells">Изменить звонки</button></section>`;
-    const semCount = DB.lessons.filter(l => (l.sem || 1) === info.num).length;
-    const body = !info.active && !list.length ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="semesters">${ic("calendar")}Даты семестров</button>`)
+    const semCount = DB.lessons.length;
+    const body = !info.active && !list.length ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="term">${ic("calendar")}Период занятий</button>`)
       : list.length ? timeline(list, d, "journal")
       : semCount ? empty("coffee", "Пар нет", d.getDay() === 0 ? "Воскресенье — выходной." : "В этот день занятий нет. Нажмите «+», чтобы добавить пару.")
-      : empty("schedule", `В ${info.num} семестре пока нет пар`, "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>`);
+      : empty("schedule", "В расписании пока нет пар", "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>`);
     return {
       title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
       actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ["download", "Обновить расписание с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
@@ -936,53 +932,126 @@
   }
 
   /* ----- Итоги ----- */
-  const PERIODS = [["1", "1 семестр"], ["2", "2 семестр"], ["year", "Весь год"]];
-  const periodName = p => (PERIODS.find(x => x[0] === p) || PERIODS[2])[1];
+  // период — весь период занятий или конкретный месяц
+  const MONTHS_NOM = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const monthTitle = m => { const [y, mo] = m.split("-").map(Number); return MONTHS_NOM[mo - 1] + (y !== TODAY.getFullYear() ? ` ${y}` : ""); };
+  const periodTitle = p => p === "term" ? "Весь период" : monthTitle(p);
+  const termRange = () => { const t = term(); return `${fmtDate(t.start)} — ${fmtDate(t.end)}`; };
+  function periodOptions() {
+    const ms = [...new Set(Object.keys(DB.attendance).map(k => k.slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))].sort().reverse().slice(0, 12);
+    return [["term", "Весь период"], ...ms.map(m => [m, monthTitle(m)])];
+  }
   function periodTabs(field) {
-    return `<div class="seg seg--fit" role="tablist" aria-label="Период">${PERIODS.map(([v, n]) => `<button role="tab" aria-selected="${S[field] === v}" data-act="period" data-f="${field}" data-v="${v}">${n}</button>`).join("")}</div>`;
+    const opts = periodOptions();
+    if (!opts.some(([v]) => v === S[field])) opts.push([S[field], periodTitle(S[field])]);
+    return `<div class="filter" role="group" aria-label="Период">${opts.map(([v, n]) => `<button aria-pressed="${S[field] === v}" data-act="period" data-f="${field}" data-v="${esc(v)}"${v === "term" ? ` title="Период занятий: ${esc(termRange())}"` : ""}>${n}</button>`).join("")}</div>`;
   }
-  function weeksChart(byWeek) {
-    const ws = Object.keys(byWeek).sort().slice(-16);
-    if (!ws.length) return `<p class="muted">Нет отмеченных пар.</p>`;
-    const ci = semInfo(TODAY), cur = `${ci.num}-${String(ci.week).padStart(2, "0")}`;
-    return `<div class="weeks" role="img" aria-label="Посещаемость по неделям">${ws.map(w => {
-      const p = attendancePct(byWeek[w]) ?? 0, wk = +w.split("-")[1];
-      return `<div class="weeks__col${w === cur ? " weeks__col--now" : ""}"><b>${p}</b><i style="height:${Math.max(4, (p - 40) / 60 * 72)}%;--c:${pctColor(p)}"></i><span>${wk}</span></div>`;
-    }).join("")}</div><p class="hint" style="text-align:left;margin-top:8px">Процент по учебным неделям${ws.includes(cur) ? `, ${ci.week}-я — текущая` : ""}. Шкала от 40 %.</p>`;
+
+  /* ----- графики ----- */
+  const clamp = p => Math.max(0, Math.min(100, p));
+  // полоса процента с засечкой (порог риска или среднее по группе)
+  const barMark = (p, c, mark, markTitle) => `<div class="bar bar--mark" role="presentation"><i style="width:${clamp(p)}%;--c:${c}"></i>${mark != null ? `<b class="bar__mark" style="left:${clamp(mark)}%" title="${esc(markTitle || "")}"></b>` : ""}</div>`;
+  // состав отметок одной полосой: был / не был / уважительная
+  function stackBar(ms) {
+    const n = ms.length || 1, part = (v, c) => v ? `<i style="width:${v / n * 100}%;--c:${c}"></i>` : "";
+    const cnt = v => ms.filter(m => m === v).length;
+    return `<div class="stack-bar" role="presentation">${part(cnt("+"), "var(--here)")}${part(cnt("н"), "var(--absent)")}${part(cnt("у"), "var(--excused)")}</div>`;
   }
+  const marksKeys = `<div class="keys"><span><i style="--c:var(--here)"></i>был</span><span><i style="--c:var(--absent)"></i>не был</span><span><i style="--c:var(--excused)"></i>уважительная</span></div>`;
+  // строки «по предметам»: у группы — состав отметок, у студента — процент и засечка «в среднем по группе»
+  function subjRows(bySubj, cmp, clickable) {
+    return Object.entries(bySubj).map(([k, v]) => ({ k, v, p: attendancePct(v) ?? 100 })).sort((a, b) => a.p - b.p).map(({ k, v, p }) => {
+      const a = v.filter(m => m === "н").length, e = v.filter(m => m === "у").length, g = cmp && cmp[k] ? attendancePct(cmp[k]) : null;
+      const meta = [`${v.length} ${plural(v.length, ["отметка", "отметки", "отметок"])}`, a && `пропусков ${a}`, e && `уваж. ${e}`, g != null && `в группе ${g}%`].filter(Boolean).join(" · ");
+      const tag = clickable ? "button" : "div";
+      return `<${tag} class="bar-row"${clickable ? ` style="text-align:left" data-act="statsSubj" data-s="${esc(k)}"` : ""}><div class="bar-row__head"><span title="${esc(k)}">${esc(k)}</span><b style="color:${pctInk(p)}">${p}%</b></div>
+        ${cmp ? barMark(p, pctColor(p), g, `в среднем по группе ${g}%`) : stackBar(v)}<div class="bar-row__meta num">${meta}</div></${tag}>`;
+    }).join("");
+  }
+  // динамика по неделям: линия с заливкой, пороги 85 и 70 %, у студента — пунктир «в среднем по группе»
+  let trendId = 0;
+  function trendChart(byWeek, cmp) {
+    const ws = Object.keys(byWeek).sort().filter(w => attendancePct(byWeek[w]) != null).slice(-16);
+    if (ws.length < 2) return `<p class="muted">Нужно хотя бы две недели с отметками.</p>`;
+    const ps = ws.map(w => attendancePct(byWeek[w])), cs = cmp ? ws.map(w => cmp[w] ? attendancePct(cmp[w]) : null) : [];
+    const lo = Math.max(0, Math.min(60, Math.floor((Math.min(...ps, ...cs.filter(v => v != null)) - 5) / 10) * 10));
+    const X = i => 3 + i / (ws.length - 1) * 94, Y = p => (p - lo) / (100 - lo) * 100;
+    const path = vals => vals.map((p, i) => p == null ? "" : `${i && vals[i - 1] != null ? "L" : "M"}${X(i).toFixed(2)},${(100 - Y(p)).toFixed(2)}`).join(" ");
+    const line = path(ps), id = `trend${++trendId}`;
+    const area = `${line} L${X(ws.length - 1).toFixed(2)},100 L${X(0).toFixed(2)},100 Z`;
+    const now = key(monday(TODAY)), last = ps.length - 1, dlt = ps[last] - ps[last - 1];
+    const wd = w => { const d = parseISO(w); return `${d.getDate()} ${MON_SHORT[d.getMonth()]}`; };
+    // подписи дат: не больше шести, последняя — всегда, соседние не налезают
+    const step = Math.ceil(ws.length / 6), labels = ws.map((w, i) => i === last || (i % step === 0 && last - i >= step)
+      ? `<span class="${i === 0 ? "is-first" : i === last ? "is-last" : ""}${w === now ? " is-now" : ""}" style="left:${X(i)}%"${w === now ? ' title="Эта неделя"' : ""}>${wd(w)}</span>` : "").join("");
+    const rules = [85, 70].filter(p => p > lo).map(p => `<i class="trend__rule" style="bottom:${Y(p)}%;--c:${pctColor(p)};--k:${pctInk(p)}"><span>${p}%</span></i>`).join("")
+      + `<i class="trend__rule trend__rule--base" style="bottom:0;--k:var(--muted-ink)"><span>${lo}%</span></i>`;
+    const pts = ps.map((p, i) => `<span class="trend__pt${i === last ? " trend__pt--last" : ""}" style="left:${X(i)}%;bottom:${Y(p)}%;--c:${pctColor(p)}" title="Неделя с ${wd(ws[i])}: ${p}%${cs[i] != null ? ` (в группе ${cs[i]}%)` : ""}"></span>`).join("");
+    const bubble = `<b class="trend__val${X(last) > 80 ? " is-end" : ""}" style="left:${X(last)}%;bottom:${Y(ps[last])}%;--c:${pctColor(ps[last])};--k:${pctInk(ps[last])}">${ps[last]}%</b>`;
+    const lo2 = Math.min(...ps), hi2 = Math.max(...ps);
+    return `<div class="trend" role="img" aria-label="Посещаемость по неделям: от ${lo2} до ${hi2} процентов, последняя неделя ${ps[last]} процентов">
+      <div class="trend__plot">${rules}
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--primary);stop-opacity:.26"/><stop offset="1" style="stop-color:var(--primary);stop-opacity:0"/></linearGradient></defs>
+          <path d="${area}" fill="url(#${id})"/>${cmp ? `<path class="trend__cmp" d="${path(cs)}"/>` : ""}<path class="trend__line" d="${line}"/></svg>
+        ${pts}${bubble}</div>
+      <div class="trend__x" aria-hidden="true">${labels}</div></div>
+      <p class="hint trend__hint">Последняя неделя — <b style="color:${pctInk(ps[last])}">${ps[last]}%</b>${dlt ? `, ${dlt > 0 ? "↑" : "↓"} ${Math.abs(dlt)} п.п. к предыдущей` : ", как на предыдущей"}.${cmp ? ` <span class="trend__cmp-key"></span> — в среднем по группе.` : ""}</p>`;
+  }
+  // когда пропускают: дни недели × номер пары
+  function slotHeat(bySlot) {
+    const ks = Object.keys(bySlot).filter(k => +k.split("|")[1] > 0 && +k.split("|")[0] > 0);
+    if (ks.length < 3) return "";
+    const days = [1, 2, 3, 4, 5, 6].filter(dw => ks.some(k => +k.split("|")[0] === dw));
+    const nums = [...new Set(ks.map(k => +k.split("|")[1]))].sort((a, b) => a - b);
+    const of = f => ks.filter(f).flatMap(k => bySlot[k]);
+    const cell = (ms, cls = "") => { const p = ms && ms.length ? attendancePct(ms) : null;
+      return p == null ? `<td class="heat__none${cls}">—</td>` : `<td class="${cls.trim()}" style="--c:${pctColor(p)};--k:${pctInk(p)}" title="${p}% · ${ms.length} ${plural(ms.length, ["отметка", "отметки", "отметок"])}">${p}</td>`; };
+    let worst = null;
+    ks.forEach(k => { const ms = bySlot[k], p = attendancePct(ms); if (p != null && ms.length >= 5 && (!worst || p < worst.p)) worst = { k, p }; });
+    const wn = worst && worst.p < 85 ? `Ниже всего — ${WD[+worst.k.split("|")[0]].toLowerCase()}, ${worst.k.split("|")[1]} пара: <b style="color:${pctInk(worst.p)}">${worst.p}%</b>.` : "Провалов нет — по всем дням и парам от 85 %.";
+    return `<div class="heat-wrap"><table class="heat"><caption class="sr-only">Посещаемость по дням недели и номерам пар, в процентах</caption>
+      <thead><tr><th></th>${nums.map(n => `<th scope="col">${n}<small> пара</small></th>`).join("")}<th scope="col" class="heat__sumh">день</th></tr></thead>
+      <tbody>${days.map(dw => `<tr><th scope="row">${WDS[dw]}</th>${nums.map(n => cell(bySlot[`${dw}|${n}`])).join("")}${cell(of(k => +k.split("|")[0] === dw), " heat__sum")}</tr>`).join("")}</tbody>
+      <tfoot><tr><th scope="row">все</th>${nums.map(n => cell(of(k => +k.split("|")[1] === n), " heat__sum")).join("")}<td class="heat__blank"></td></tr></tfoot></table></div>
+      <p class="hint" style="text-align:left;margin-top:8px">${wn} Цифры — процент посещаемости.</p>`;
+  }
+
   SCREENS.stats = () => {
-    S.statsPeriod ||= String(semInfo(TODAY).num);
+    S.statsPeriod ||= "term";
     const recs = periodRecords(S.statsPeriod, S.statsSubject), st = collectStats(recs);
     const subs = [...new Set(periodRecords(S.statsPeriod).map(x => baseSubject(x.r.subject)))].sort((a, b) => a.localeCompare(b, "ru"));
     const filter = subs.length ? `<div class="filter" role="group" aria-label="Предмет"><button aria-pressed="${!S.statsSubject}" data-act="statsSubj" data-s="">Все предметы</button>${subs.map(s => `<button aria-pressed="${S.statsSubject === s}" data-act="statsSubj" data-s="${esc(s)}" title="${esc(s)}"><span>${esc(s)}</span></button>`).join("")}</div>` : "";
-    const head = { title: "Итоги", sub: `${periodName(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: "#journal", nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
-    if (!st.all.length) return { ...head, html: `${periodTabs("statsPeriod")}${filter}${empty("chart", "Пока нет отметок", `За период «${periodName(S.statsPeriod)}» ещё нет отмеченных пар. Итоги появятся после первой отметки в журнале.`)}` };
-    const P = st.pct ?? 0, list = students().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
-    const low = list.filter(x => x.p < 70).length;
+    const head = { title: "Итоги", sub: `${periodTitle(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: "#journal", nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
+    if (!st.all.length) return { ...head, html: `${periodTabs("statsPeriod")}${filter}${empty("chart", "Пока нет отметок", `За период «${periodTitle(S.statsPeriod)}» ещё нет отмеченных пар. Итоги появятся после первой отметки в журнале.`)}` };
+    const P = st.pct ?? 0, risk = riskPct(), list = students().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
+    const low = list.filter(x => x.p < risk).length;
+    const avgOf = f => Math.round(recs.reduce((a, x) => a + Object.values(x.r.marks || {}).filter(f).length, 0) / recs.length);
+    const heat = slotHeat(st.bySlot), weeks = Object.keys(st.byWeek).length >= 2;
     return { ...head, html: `
       ${periodTabs("statsPeriod")}${filter}
       <div class="grid grid--cols2">
         <section class="card"><div class="card__head">${ic("chart")}<h3>Посещаемость</h3></div>
           <div class="summary">${donut([{ v: st.here, c: "var(--here)" }, { v: st.abs, c: "var(--absent)" }, { v: st.exc, c: "var(--excused)" }], 126, 18, `<b style="color:${pctInk(P)}">${P}%</b><small>посещаемость</small>`, `Посещаемость ${P} процентов`)}
           <div class="legend"><div><i style="--c:var(--here)"></i>Были<b>${st.here}</b></div><div><i style="--c:var(--absent)"></i>Не были<b>${st.abs}</b></div><div><i style="--c:var(--excused)"></i>Уважительная<b>${st.exc}</b></div>
-          <p class="muted" style="font-size:12px;margin-top:4px">${recs.length} ${plural(recs.length, ["занятие", "занятия", "занятий"])}. Уважительные пропуски не снижают процент.</p></div></div></section>
-        ${Object.keys(st.byWeek).length >= 3 ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>` : ""}
-        ${S.statsSubject ? "" : `<section class="card" style="grid-column:1/-1"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div>
-          <div class="grid grid--cols2" style="gap:14px 28px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, p]) =>
-            `<button class="bar-row" style="text-align:left" data-act="statsSubj" data-s="${esc(k)}"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(p)}">${p}%</b></div>${bar(p, pctColor(p))}</button>`).join("")}</div></section>`}
+          <div class="compare">В среднем на паре <b style="color:var(--text)">${avgOf(m => m === "+")} из ${avgOf(Boolean)}</b> · ${recs.length} ${plural(recs.length, ["занятие", "занятия", "занятий"])}</div>
+          <p class="muted" style="font-size:12px">Уважительные пропуски не снижают процент.</p></div></div></section>
+        ${weeks ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${trendChart(st.byWeek)}</section>` : ""}
+        ${heat ? `<section class="card"><div class="card__head">${ic("clock")}<h3>Дни и пары</h3></div>${heat}</section>` : ""}
+        ${S.statsSubject ? "" : `<section class="card"${heat && weeks ? "" : ' style="grid-column:1/-1"'}><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div>${marksKeys}
+          <div class="stack" style="gap:16px">${subjRows(st.bySubj, null, true)}</div></section>`}
       </div>
-      ${(() => { // риск недопуска — только для текущего семестра
-        if (S.statsPeriod !== String(semInfo(TODAY).num) || S.statsSubject) return "";
+      ${(() => { // риск недопуска — только за весь период занятий
+        if (S.statsPeriod !== "term" || S.statsSubject) return "";
         const rl = riskList();
-        return `${sectionHead("risk", `Риск недопуска. Ниже ${riskPct()}% по предмету`, `<button class="link" data-act="form" data-f="risk">Порог</button>`)}
+        return `${sectionHead("risk", `Риск недопуска. Ниже ${risk}% по предмету`, `<button class="link" data-act="form" data-f="risk">Порог</button>`)}
           ${rl.length ? `<div class="card list list--cols">${rl.map(({ s, subs }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>
-            <div class="person__meta">${subs.map(x => `<span class="chip" style="--c:var(--bad)">${esc(x.subj)} · ${x.pct}%</span>`).join("")}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>`
-            : `<p class="muted" style="font-size:14px">Никого — у всех посещаемость по предметам не ниже ${riskPct()}%.</p>`}`; })()}
-      ${sectionHead("group", "Студенты. Сначала отстающие", low ? `<span class="pill pill--bad">${low} ниже 70%</span>` : "")}
-      <p class="hint" style="text-align:left">Нажмите на студента, чтобы открыть его пропуски.</p>
+            <div class="person__meta">${subs.map(x => `<span class="chip chip--clip" style="--c:var(--bad)" title="${esc(x.subj)} · ${x.pct}%">${esc(x.subj)} · ${x.pct}%</span>`).join("")}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>`
+            : `<p class="muted" style="font-size:14px">Никого — у всех посещаемость по предметам не ниже ${risk}%.</p>`}`; })()}
+      ${sectionHead("group", "Студенты. Сначала отстающие", low ? `<span class="pill pill--bad">${low} ниже ${risk}%</span>` : "")}
+      <p class="hint" style="text-align:left">Засечка на полосе — порог ${risk}%. Нажмите на студента, чтобы открыть его пропуски.</p>
       <div class="card list list--cols">${list.map(({ s, p, abs, exc }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">
         ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b class="num" style="color:${pctInk(p)}">${p}%</b></div>
-        <div style="margin:5px 0 3px">${bar(p, pctColor(p), true)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
+        <div style="margin:6px 0 4px">${barMark(p, pctColor(p), risk, `порог ${risk}%`)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
   };
 
   /* ----- выгрузка в Excel: «Сводка» + лист-ведомость на каждый предмет ----- */
@@ -1035,13 +1104,13 @@
     return sheets;
   }
   function exportExcel() {
-    S.statsPeriod ||= String(semInfo(TODAY).num);
+    S.statsPeriod ||= "term";
     const recs = periodRecords(S.statsPeriod, S.statsSubject);
     if (!recs.length) return toast("Нечего выгружать — за этот период отметок нет", "info");
-    const ay = academicYear(TODAY), yy = `${ay}/${String(ay + 1).slice(-2)}`;
-    const sheets = attendanceWorkbook(recs, S.statsPeriod === "year" ? `учебный год ${yy}` : `${S.statsPeriod} семестр ${yy}`);
+    const t = term(), [y, mo] = S.statsPeriod.split("-").map(Number);
+    const sheets = attendanceWorkbook(recs, S.statsPeriod === "term" ? `период занятий ${dmy(t.start)}–${dmy(t.end)}` : `${MONTHS_NOM[mo - 1].toLowerCase()} ${y}`);
     const suffix = S.statsSubject ? "_" + S.statsSubject.replace(/[^\wа-яё]+/gi, "_") : "";
-    download(XLSX.blob(sheets), `посещаемость_${S.statsPeriod === "year" ? "год" : S.statsPeriod + "сем"}${suffix}_${key(TODAY)}.xlsx`);
+    download(XLSX.blob(sheets), `посещаемость_${S.statsPeriod === "term" ? "период" : S.statsPeriod}${suffix}_${key(TODAY)}.xlsx`);
     const n = sheets.length - 1;
     toast(`Ведомость скачана: сводка и ${n} ${plural(n, ["лист", "листа", "листов"])} по предметам`, "excel");
   }
@@ -1051,14 +1120,14 @@
     const s = DB.students.find(x => x.id === id);
     const back = S.from === "stats" ? "#stats" : "#group", nav = S.from === "stats" ? "journal" : "group";
     if (!s) return { title: "Студент не найден", back, nav, html: empty("group", "", "Возможно, студента удалили из группы.") };
-    S.studentPeriod ||= String(semInfo(TODAY).num);
+    S.studentPeriod ||= "term";
     const recs = periodRecords(S.studentPeriod), st = collectStats(recs, s.id), all = collectStats(recs);
     const P = st.pct, avg = all.pct, misses = st.misses.sort((a, b) => b.d - a.d), p = parseBday(s.birthday);
     const roleTxt = s.role === "head" ? " · староста" : s.role === "deputy" ? " · зам. старосты" : "";
     const nb = p && nextBday(p), nn = nb && daysBetween(TODAY, nb), age = nb && bdayAge(s.birthday, nb);
     const bday = p ? `<span${nn <= BDAY_AHEAD ? ' style="color:var(--primary-ink);font-weight:var(--fw-bold)"' : ""}>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}${nn === 0 ? " — сегодня!" : nn <= 30 ? `, ${whenText(nn)}` : ""}${age ? ` · исполнится ${age}` : ""}</span>`
       : `<button class="link" style="padding:4px 0" data-act="form" data-f="student" data-id="${esc(s.id)}">${ic("cake")} Указать день рождения</button>`;
-    const weeks = Object.keys(st.byWeek).length >= 3;
+    const weeks = Object.keys(st.byWeek).length >= 2, heat = slotHeat(st.bySlot);
     const ill = DB.sick.filter(x => x.sid === s.id).sort((a, b) => b.from.localeCompare(a.from)), illNow = sickOn(s.id, TODAY);
     const sickCard = `<section class="card"><div class="card__head">${ic("sick")}<h3>Больничные</h3><button class="link" data-act="sickAdd" data-sid="${esc(s.id)}">Добавить</button></div>
       ${ill.length ? `<div class="mini">${ill.map(x => `<div class="mini__row"><div class="mini__body"><div class="mini__title">${sickRange(x)}${x === illNow ? ` <span class="pill pill--exc" style="height:22px;font-size:11px">сейчас</span>` : ""}</div>${x.note ? `<div class="mini__sub">${esc(x.note)}</div>` : ""}</div>
@@ -1073,15 +1142,15 @@
           <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${illNow ? `<span style="color:var(--excused-ink);font-weight:var(--fw-bold)">${ic("sick")} на больничном до ${fmtDate(parseISO(illNow.to))}</span>` : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
         ${sickCard}
         ${periodTabs("studentPeriod")}
-        ${!st.all.length ? empty("chart", "Отметок пока нет", `За период «${periodName(S.studentPeriod)}» у студента нет отметок.`) : `
+        ${!st.all.length ? empty("chart", "Отметок пока нет", `За период «${periodTitle(S.studentPeriod)}» у студента нет отметок.`) : `
         <div class="grid grid--cols2">
           <section class="card"><div class="card__head">${ic("chart")}<h3>Посещаемость</h3></div>
             <div class="summary">${donut([{ v: st.here, c: "var(--here)" }, { v: st.abs, c: "var(--absent)" }, { v: st.exc, c: "var(--excused)" }], 120, 17, `<b style="color:${pctInk(P ?? 100)}">${P ?? "—"}${P != null ? "%" : ""}</b><small>посещаемость</small>`, `Посещаемость ${P ?? "—"} процентов`)}
             <div class="legend"><div><i style="--c:var(--here)"></i>Был<b>${st.here}</b></div><div><i style="--c:var(--absent)"></i>Не был<b>${st.abs}</b></div><div><i style="--c:var(--excused)"></i>Уважительная<b>${st.exc}</b></div>
-            ${avg != null ? `<div class="compare">В среднем по группе <b style="color:var(--text)">${avg}%</b></div>` : ""}</div></div></section>
-          ${weeks ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${weeksChart(st.byWeek)}</section>` : ""}
-          <section class="card"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div><div class="stack" style="gap:14px">${Object.entries(st.bySubj).map(([k, v]) => [k, attendancePct(v) ?? 100]).sort((a, b) => a[1] - b[1]).map(([k, q]) =>
-            `<div class="bar-row"><div class="bar-row__head"><span>${esc(k)}</span><b style="color:${pctInk(q)}">${q}%</b></div>${bar(q, pctColor(q))}</div>`).join("")}</div></section>
+            ${avg != null ? `<div class="compare">В среднем по группе <b style="color:var(--text)">${avg}%</b>${P != null ? (P === avg ? " · на уровне группы" : ` · <span style="color:${P > avg ? "var(--ok-ink)" : "var(--bad-ink)"}">${P > avg ? "выше" : "ниже"} на ${Math.abs(P - avg)} п.п.</span>`) : ""}</div>` : ""}</div></div></section>
+          ${weeks ? `<section class="card"><div class="card__head">${ic("calendar")}<h3>По неделям</h3></div>${trendChart(st.byWeek, all.byWeek)}</section>` : ""}
+          <section class="card"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div><p class="hint" style="text-align:left;margin:-4px 0 12px">Засечка — средняя посещаемость группы по предмету.</p><div class="stack" style="gap:16px">${subjRows(st.bySubj, all.bySubj)}</div></section>
+          ${heat ? `<section class="card"><div class="card__head">${ic("clock")}<h3>Дни и пары</h3></div>${heat}</section>` : ""}
           <section class="card"><div class="card__head">${ic("alarm")}<h3>Пропуски</h3><span class="pill pill--bad num">${misses.length}</span></div>
             ${misses.length ? `<div class="mini">${misses.slice(0, 20).map(x => `<a class="mini__row" href="#mark/${esc(x.k.split("|")[1])}/${key(x.d)}"><span class="mark__chip" style="width:36px;height:30px;font-size:14px;background:${x.m === "н" ? "var(--bad)" : "var(--excused)"};color:#fff">${x.m === "н" ? "Н" : "У"}</span><div class="mini__body"><div class="mini__title">${esc(baseSubject(x.r.subject))}</div><div class="mini__sub">${fmtShort(x.d)} · ${x.r.num || "?"} пара</div></div>${ic("right", "muted")}</a>`).join("")}</div>
               ${misses.length > 20 ? `<p class="hint" style="margin-top:8px">и ещё ${misses.length - 20}</p>` : ""}` : `<p class="muted">Пропусков нет — отлично.</p>`}</section>
@@ -1247,7 +1316,7 @@
   ];
   SCREENS.settings = () => {
     // пока тему не выбрали вручную, она следует за системой — выделяем ту, что сейчас на экране
-    const st = store.get("theme", "system"), cur = st === "system" ? (isDark() ? "dark" : "mint") : st, [s1, s2] = semesterDates(), b = bells();
+    const st = store.get("theme", "system"), cur = st === "system" ? (isDark() ? "dark" : "mint") : st, tm = term(), b = bells();
     const row = (title, sub, act = "") => `<div class="setting"><div class="setting__body"><b>${title}</b><span>${sub}</span></div>${act}</div>`;
     const editBtn = f => `<button class="btn btn--soft btn--sm" data-act="form" data-f="${f}">${ic("edit")}Изменить</button>`;
     const lastBackup = store.get("lastBackup", 0), ng = DB.settings.nntu_group, synced = parseISO(DB.settings.nntu_synced);
@@ -1267,7 +1336,7 @@
                 `<button class="btn btn--${ng ? "soft" : "primary"} btn--sm" data-act="form" data-f="nntu">${ic("download")}${ng ? "Обновить" : "Загрузить"}</button>`)}
               ${ng ? row("Автопроверка", `Раз в день при открытии сверяем ближайшие дни с сайтом${DB.settings.nntu_checked ? ` · последняя ${fmtDate(parseISO(DB.settings.nntu_checked))}` : ""}`,
                 `<button class="btn btn--neutral btn--sm" data-act="checkNow">Проверить</button>`) : ""}
-              ${row("Семестры", `1-й: ${fmtDate(s1[0])} — ${fmtDate(s1[1])} · 2-й: ${fmtDate(s2[0])} — ${fmtDate(s2[1])}`, editBtn("semesters"))}
+              ${row("Период занятий", `${fmtDate(tm.start)} — ${fmtDate(tm.end)} · ${weekInfo(TODAY).label}`, editBtn("term"))}
               ${row("Звонки", `${b.length} ${plural(b.length, ["пара", "пары", "пар"])}, ${b[0][0]}–${b[b.length - 1][1]}`, editBtn("bells"))}
               ${row("Риск недопуска", `Предупреждать, если посещаемость по предмету ниже ${riskPct()}%`, editBtn("risk"))}
             </section>
@@ -1297,14 +1366,13 @@
   };
 
   /* ----- пример для гостей ----- */
-  // отметки с начала семестра по сегодня, а ещё дела, сдачи, касса, сессия и событие — даты от сегодняшнего дня
+  // отметки с начала периода занятий по сегодня, а ещё дела, сдачи, касса, сессия и событие — даты от сегодняшнего дня
   function demoFill() {
-    const R = Math.random, cur = semInfo(TODAY), day = n => key(addDays(TODAY, n));
-    DB.lessons.forEach(l => { l.sem = cur.num; });
+    const R = Math.random, day = n => key(addDays(TODAY, n));
     const ids = students().map(s => s.id), some = share => ids.filter(() => R() < share);
     // у каждого своя привычка: большинство ходит почти всегда, несколько человек — с пропусками
     const habit = Object.fromEntries(ids.map(id => [id, R() < 0.1 ? 0.6 + R() * 0.15 : 0.86 + R() * 0.13]));
-    const [start, end] = semesterDates(academicYear(TODAY))[cur.num - 1];
+    const { start, end } = term();
     for (let d = start; d <= TODAY && d <= end; d = addDays(d, 1))
       lessonsOn(d).forEach(l => {
         if (lessonState(l, d) !== "past") return;
@@ -1343,7 +1411,7 @@
           <p>Расписание, посещаемость и дела группы НГТУ — в браузере на телефоне и компьютере. Данные хранятся только на этом устройстве.</p></section>
         <section class="card welcome__card">
           <div class="card__head">${ic("chart")}<h3>Просто посмотреть</h3></div>
-          <p class="muted" style="font-size:14px;margin-bottom:12px">Пример с группой 26-ИВТ-2-1: настоящее расписание и список, посещаемость за семестр расставлена случайно.</p>
+          <p class="muted" style="font-size:14px;margin-bottom:12px">Пример с группой 26-ИВТ-2-1: настоящее расписание и список, посещаемость с начала занятий расставлена случайно.</p>
           <button class="btn btn--primary btn--block btn--lg" data-act="demo">Открыть пример</button>
           ${FEEDBACK_URL ? `<p class="hint" style="margin-top:10px">Понравилось или нет — <a href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">оцените сайт</a></p>` : ""}
         </section>
@@ -1588,12 +1656,11 @@
       ${field("Время", `<input name="time" type="time" value="${esc(e.time || "")}">`)}
       ${field("Место", `<input name="place" value="${esc(e.place || "")}" placeholder="6245, корп. 6">`)}</div>
       ${field("Описание", textarea("text", e.text || ""))}${formBtns(e.id && "delEvent", e.id)}</form>`; },
-    lesson: (id) => { const l = DB.lessons.find(x => x.id === id), b = bells(), info = semInfo(S.journalDate || TODAY);
+    lesson: (id) => { const l = DB.lessons.find(x => x.id === id), b = bells();
       return `${sheetHead("schedule", "var(--accent-6)", l ? "Пара" : "Новая пара")}<form data-form="lesson" data-id="${esc(l?.id || "")}">
       ${field("Предмет", `<input name="subject" required value="${esc(l?.subject || "")}" list="subjects" placeholder="Информатика (подгруппа 1)"><datalist id="subjects">${subjects().map(s => `<option value="${esc(s)}">`).join("")}</datalist>`)}
       <p class="hint" style="text-align:left;margin:-6px 0 10px">Для пары подгруппы допишите «(подгруппа N)».</p>
       <div class="grid grid--cols2" style="gap:0 12px">
-        ${field("Семестр", select("sem", [[1, "1 семестр"], [2, "2 семестр"]], l?.sem || info.num))}
         ${field("Тип занятия", select("kind", ["Лекция", "Практика", "Лабораторная", "Семинар", "Другое"], l?.kind || "Лекция"))}
         ${field("День недели", select("day", WD_PY.map((n, i) => [i, n]), l?.day ?? Math.min(pyDay(S.journalDate || TODAY), 5)))}
         ${field("Номер пары", select("num", b.map((x, i) => [i + 1, `${i + 1} пара · ${x[0]}–${x[1]}`]), l?.num || 1))}
@@ -1725,15 +1792,15 @@
       <p class="hint" style="text-align:left;margin:-4px 0 12px">Сначала покажем, что изменится, — ничего не заменится без вашего согласия. Отметки в журнале сохранятся.</p>
       ${formErr}<div class="btn-row"><button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">${ic("download")}Загрузить</button></div></form>`,
     nntuPlan: () => {
-      const p = PLAN, sems = p.sems.map(n => `${n} семестр`).join(", ");
+      const p = PLAN;
       const list = (title, items, line, cls) => items.length ? `<h3 class="plan__title">${title} <span class="pill ${cls} num">${items.length}</span></h3>
         <ul class="plan__list">${items.slice(0, 8).map(x => `<li>${line(x)}</li>`).join("")}${items.length > 8 ? `<li class="muted">и ещё ${items.length - 8}</li>` : ""}</ul>` : "";
       const FN = { week: "неделя", kind: "тип", room: "аудитория", teacher: "преподаватель", start: "начало", end: "конец" };
       const val = (f, v) => f === "week" ? ({ all: "каждую", odd: "нечётная", even: "чётная" }[v || "all"]) : (v || "—");
-      if (p.empty) return `${sheetHead("tick", "var(--primary)", "Расписание НГТУ")}<p style="margin-bottom:16px">Группа ${esc(p.group)}, ${sems}: расписание совпадает с сайтом НГТУ — менять нечего.</p>
+      if (p.empty) return `${sheetHead("tick", "var(--primary)", "Расписание НГТУ")}<p style="margin-bottom:16px">Группа ${esc(p.group)}: расписание совпадает с сайтом НГТУ — менять нечего.</p>
         <button class="btn btn--primary btn--block btn--lg" data-act="nntuApply">Готово</button>`;
       return `${sheetHead("download", "var(--primary)", "Что изменится")}
-        <p class="muted" style="margin:-6px 0 12px;font-size:14px">Группа ${esc(p.group)} · ${sems}${p.same ? ` · без изменений: ${p.same}` : ""}</p>
+        <p class="muted" style="margin:-6px 0 12px;font-size:14px">Группа ${esc(p.group)}${p.same ? ` · без изменений: ${p.same}` : ""}</p>
         ${list("Добавятся", p.add, l => `${esc(lessonLine(l))}<small>${esc([l.kind, weekTag(l.week), l.room].filter(Boolean).join(" · "))}</small>`, "pill--ok")}
         ${list("Изменятся", p.upd, x => `${esc(lessonLine(x.o))}<small>${x.ch.map(f => `${FN[f]}: ${esc(val(f, x.o[f]))} → ${esc(val(f, x.n[f]))}`).join("; ")}</small>`, "pill--warn")}
         ${list("Уберутся", p.del, l => `${esc(lessonLine(l))}<small>${esc([l.kind, weekTag(l.week)].filter(Boolean).join(" · "))}</small>`, "pill--bad")}
@@ -1741,12 +1808,11 @@
         <p class="hint" style="text-align:left;margin:4px 0 14px">Отметки в журнале сохранятся. Сайт показывает только две ближайшие недели: разовый перенос пары попадёт в расписание как постоянный — его можно поправить вручную.</p>
         <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary" data-act="nntuApply">Применить</button></div>`;
     },
-    semesters: () => { const s = semesterDates();
-      const sem = i => `<fieldset class="fieldset"><legend>${i + 1} семестр</legend><div class="grid grid--cols2" style="gap:0 12px">
-        ${field("Начало", `<input name="start${i}" type="date" required value="${key(s[i][0])}">`)}${field("Конец", `<input name="end${i}" type="date" required value="${key(s[i][1])}">`)}</div>
-        <label class="check-row"><input type="checkbox" name="odd${i}"${s[i][2] ? " checked" : ""}> Первая неделя — нечётная</label></fieldset>`;
-      return `${sheetHead("calendar", "var(--primary)", "Семестры")}<form data-form="semesters">${sem(0)}${sem(1)}
-        <p class="hint" style="text-align:left;margin:0 0 12px">От начала семестра считаются номера недель и чётность. Каждый год даты сдвигаются сами.</p>${formBtns()}</form>`; },
+    term: () => { const t = term();
+      return `${sheetHead("calendar", "var(--primary)", "Период занятий")}<form data-form="term">
+        <div class="grid grid--cols2" style="gap:0 12px">${field("Первый день занятий", `<input name="start" type="date" required value="${key(t.start)}">`)}${field("Последний день", `<input name="end" type="date" required value="${key(t.end)}">`)}</div>
+        ${field(`Эта неделя (с ${fmtDate(monday(TODAY))})`, select("parity", [["odd", "Нечётная"], ["even", "Чётная"]], weekInfo(TODAY).parity))}
+        <p class="hint" style="text-align:left;margin:0 0 12px">Расписание вуза известно на один семестр: в эти дни пары идут по неделям, с учётом чётности. Начался новый семестр — поменяйте даты и загрузите расписание с сайта НГТУ заново.</p>${formBtns()}</form>`; },
     bells: () => { const b = bells(), n = Math.min(Math.max(b.length + 1, 6), 8);
       return `${sheetHead("clock", "var(--primary)", "Звонки")}<form data-form="bells"><div class="bells-form">${Array.from({ length: n }, (_, i) =>
         `<b class="num">${i + 1}</b><input name="s${i}" type="time" value="${esc(b[i]?.[0] || "")}" aria-label="${i + 1} пара, начало"><span>—</span><input name="e${i}" type="time" value="${esc(b[i]?.[1] || "")}" aria-label="${i + 1} пара, конец">`).join("")}</div>
@@ -1770,13 +1836,13 @@
         });
       case "nntu":
         return loadNntu(f, v.group, res => { PLAN = nntuPlan(res); openSheet(FORMS.nntuPlan()); });
-      case "semesters": {
-        const sems = [0, 1].map(i => ({ start: v["start" + i], end: v["end" + i], first_week_odd: !!v["odd" + i] }));
-        const d = sems.map(s => [parseISO(s.start), parseISO(s.end)]);
-        if (d.some(([a, z]) => !a || !z)) return err("Укажите даты начала и конца обоих семестров");
-        if (d.some(([a, z]) => a >= z)) return err("Конец семестра должен быть позже начала");
-        if (d[1][0] <= d[0][1]) return err("2 семестр должен начинаться после конца 1-го");
-        DB.settings.semesters = sems; break;
+      case "term": {
+        const a = parseISO(v.start), z = parseISO(v.end);
+        if (!a || !z) return err("Укажите первый и последний день занятий");
+        if (a >= z) return err("Последний день должен быть позже первого");
+        // номер этой недели от начала и её чётность, которую указал староста → чётность первой недели
+        const wk = Math.floor(daysBetween(monday(a), monday(TODAY)) / 7) + 1, wkOdd = (((wk % 2) + 2) % 2) === 1;
+        DB.settings.term = { start: v.start, end: v.end, first_week_odd: wkOdd === (v.parity === "odd") }; break;
       }
       case "bells": {
         const out = [];
@@ -1807,7 +1873,7 @@
       case "lesson": {
         if (!trim(v.subject)) return err("Укажите предмет");
         const l = DB.lessons.find(x => x.id === id) || { id: newId() };
-        Object.assign(l, { subject: trim(v.subject).replace(/\s+/g, " "), day: +v.day, num: +v.num, week: v.week, kind: v.kind, room: trim(v.room), teacher: trim(v.teacher), sem: +v.sem });
+        Object.assign(l, { subject: trim(v.subject).replace(/\s+/g, " "), day: +v.day, num: +v.num, week: v.week, kind: v.kind, room: trim(v.room), teacher: trim(v.teacher) });
         if (!id) { DB.lessons.push(l); msg = "Пара добавлена"; }
         ensureTeacher(l.teacher); break;
       }
@@ -2059,7 +2125,7 @@
         openSheet(`${sheetHead("camera", "var(--accent-5)", "Справка")}<img class="photo" src="${url}" alt="Фото справки"><div class="btn-row" style="margin-top:12px"><button class="btn btn--neutral" data-act="closeSheet">Закрыть</button></div>`);
       } catch (e) { toast("Не удалось открыть фото", "info"); }
     },
-    riskView: () => { S.statsPeriod = String(semInfo(TODAY).num); S.statsSubject = ""; S.from = "stats"; return false; },
+    riskView: () => { S.statsPeriod = "term"; S.statsSubject = ""; S.from = "stats"; return false; },
     copyDay: () => copy(dayText(S.journalDate || TODAY), "Расписание скопировано для чата"),
     // ----- дни рождения
     bdaySeen: () => {

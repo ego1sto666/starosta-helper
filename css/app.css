@@ -323,14 +323,59 @@ a { color: inherit; text-decoration: none; }
 .summary { display: flex; gap: 18px; align-items: center; }
 .summary .legend { flex: 1; min-width: 0; }
 
-/* ---------- столбики по неделям ---------- */
-.weeks { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 18px; }
-.weeks__col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
-.weeks__col b { font-size: 11px; font-weight: var(--fw-regular); color: var(--muted-ink); font-variant-numeric: tabular-nums; }
-.weeks__col i { width: 100%; max-width: 34px; border-radius: 7px 7px 4px 4px; background: var(--c); transform-origin: bottom; animation: rise 600ms var(--ease) both; }
-.weeks__col span { font-size: 11px; color: var(--muted-ink); }
-.weeks__col--now span { color: var(--text); font-weight: var(--fw-bold); }
-@keyframes rise { from { transform: scaleY(0); } }
+/* ---------- графики итогов ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* полоса с засечкой: порог риска или среднее по группе */
+.bar--mark { position: relative; overflow: visible; }
+.bar__mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); opacity: .45; }
+/* состав отметок: был / не был / уважительная */
+.stack-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: var(--track); }
+.stack-bar > i { display: block; height: 100%; background: var(--c); transform-origin: left; animation: grow 600ms var(--ease) both; }
+.bar-row__meta { font-size: 12px; color: var(--muted-ink); }
+/* длинное название предмета в плашке обрезается «…», а не растягивает строку */
+.chip--clip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; line-height: 24px; }
+.keys { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted-ink); margin: -4px 0 14px; }
+.keys span { display: inline-flex; align-items: center; gap: 6px; }
+.keys i { width: 10px; height: 10px; border-radius: 5px; background: var(--c); }
+
+/* динамика по неделям: линия, заливка, пороги */
+.trend { padding: 22px 40px 0 0; }
+.trend__plot { position: relative; height: 150px; border-bottom: 1px solid var(--line); }
+.trend__plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; animation: fade 500ms var(--ease) both; }
+.trend__line { fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.trend__cmp { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.trend__rule { position: absolute; left: 0; right: -40px; height: 0; border-top: 1px dashed color-mix(in srgb, var(--c) 60%, transparent); }
+.trend__rule--base { border-top: 0; }
+.trend__rule span { position: absolute; right: 0; top: -8px; font-size: 11px; line-height: 16px; color: var(--k); background: var(--card); padding-left: 4px; font-variant-numeric: tabular-nums; }
+.trend__pt { position: absolute; width: 10px; height: 10px; margin: 0 0 -5px -5px; border-radius: 50%;
+  background: var(--card); border: 2.5px solid var(--c); animation: fade 400ms var(--ease) both; }
+.trend__pt--last { width: 13px; height: 13px; margin: 0 0 -6.5px -6.5px; background: var(--c); box-shadow: 0 0 0 3px var(--card); }
+.trend__val { position: absolute; transform: translate(-50%, -12px); margin-bottom: 0; padding: 2px 7px; border-radius: 8px; font-size: 12px;
+  font-weight: var(--fw-bold); font-variant-numeric: tabular-nums; color: var(--k); background: color-mix(in srgb, var(--c) 20%, var(--card)); white-space: nowrap; }
+.trend__val.is-end { transform: translate(calc(-100% + 8px), -12px); }
+.trend__x { position: relative; height: 18px; margin-top: 6px; font-size: 11px; color: var(--muted-ink); font-variant-numeric: tabular-nums; }
+.trend__x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.trend__x .is-first { transform: translateX(-12%); }
+.trend__x .is-last { transform: translateX(-88%); }
+.trend__x .is-now { color: var(--text); font-weight: var(--fw-bold); }
+.trend__hint { text-align: left; margin-top: 10px; }
+.trend__cmp-key { display: inline-block; width: 18px; height: 0; border-top: 2px dashed var(--muted); vertical-align: middle; margin-right: 2px; }
+@keyframes fade { from { opacity: 0; } }
+
+/* дни недели × номер пары */
+.heat-wrap { overflow-x: auto; margin: 0 -4px; }
+.heat { width: 100%; min-width: 280px; border-collapse: separate; border-spacing: 4px; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.heat th { font-size: 11px; font-weight: var(--fw-medium); color: var(--muted-ink); text-align: center; padding: 0 0 2px; }
+.heat th small { font-size: 10px; display: none; }
+.heat th[scope="row"] { text-align: left; width: 30px; padding: 0; }
+.heat td { height: 34px; border-radius: 8px; text-align: center; font-size: 13px; font-weight: var(--fw-bold); color: var(--k);
+  background: color-mix(in srgb, var(--c) 22%, var(--card)); animation: fade 400ms var(--ease) both; }
+.heat td.heat__none { background: var(--field); color: var(--muted); font-weight: var(--fw-regular); }
+.heat td.heat__sum { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 55%, transparent); }
+.heat td.heat__blank { background: transparent; }
+.heat .heat__sumh { color: var(--text); }
+@media (min-width: 520px) { .heat th small { display: inline; } }
+@media (prefers-reduced-motion: reduce) { .trend__plot svg, .trend__pt, .heat td, .stack-bar > i { animation: none; } }
 
 /* ---------- аватар, чипы ---------- */
 .avatar { width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center;
@@ -479,7 +524,7 @@ a { color: inherit; text-decoration: none; }
 /* ---------- студент ---------- */
 .profile { display: flex; gap: 16px; align-items: center; }
 .profile h2 { font-size: 22px; font-weight: var(--fw-bold); line-height: 1.2; overflow-wrap: anywhere; }
-.compare { display: flex; gap: 6px; align-items: baseline; font-size: 14px; color: var(--muted-ink); margin-top: 8px; }
+.compare, .legend .compare { display: block; font-size: 14px; line-height: 1.4; color: var(--muted-ink); margin-top: 8px; }
 
 /* ---------- настройки ---------- */
 .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
@@ -587,7 +632,7 @@ a { color: inherit; text-decoration: none; }
   .mark-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .boards { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)) minmax(240px, 1fr); gap: 12px; align-items: start; }
   .sg-list { display: none; }
-  .weeks { height: 190px; }
+  .trend__plot { height: 190px; }
 }
 @media (min-width: 1500px) {
   .mark-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -53,7 +53,7 @@ window.NNTU = (() => {
   }
 
   /* Расписание группы → { bells: ["08:00-09:35", …], weeks: [{ monday: Date, lessons: [...] }] }
-     lessons — в формате приложения, но без id, недели и семестра (их назначает приложение). */
+     lessons — в формате приложения, но без id и недели (их назначает приложение). */
   async function schedule(group, today = new Date()) {
     const raw = await get(`${API}/group-schedule?groupName=${encodeURIComponent(normGroup(group))}`);
     const bells = (raw.times || []).map(t => String(t).replace(/\s*[—–-]\s*/, "-")).filter(t => /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(t));
