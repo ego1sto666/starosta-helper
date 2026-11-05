@@ -211,10 +211,21 @@
     if (!base) { st.subgroup = n; return; }
     st.subgroups ??= {}; if (n) st.subgroups[base] = n; else delete st.subgroups[base];
   }
-  const students = () => DB.students.slice().sort(byName);
-  // кто должен быть на занятии → [студенты, номер подгруппы или 0 — вся группа]
-  function roster(subject) {
-    const all = students(), n = subgroupOf(subject);
+  // в группе ли студент в этот день: отчисленные и ушедшие в академический отпуск выпадают из списков
+  // status: "" | "academ" | "expelled", status_from, status_to (академ: плановый выход), history — прошлые академы
+  function inGroup(s, d = TODAY) {
+    const k = typeof d === "string" ? d : key(d);
+    if ((s.history || []).some(h => h.from <= k && (!h.to || k < h.to))) return false;
+    if (!s.status || k < (s.status_from || "")) return true;
+    return s.status === "academ" && !!s.status_to && k > s.status_to;
+  }
+  const students = (d = TODAY) => DB.students.filter(s => inGroup(s, d)).sort(byName);
+  const allStudents = () => DB.students.slice().sort(byName);
+  const statusText = s => !s.status ? "" : s.status === "expelled" ? `отчислен${s.status_from ? ` с ${fmtDate(parseISO(s.status_from))}` : ""}`
+    : `академ. отпуск${s.status_from ? ` с ${fmtDate(parseISO(s.status_from))}` : ""}${s.status_to ? ` до ${fmtDate(parseISO(s.status_to))}` : ""}`;
+  // кто должен быть на занятии в этот день → [студенты, номер подгруппы или 0 — вся группа]
+  function roster(subject, d = TODAY) {
+    const all = students(d), n = subgroupOf(subject);
     if (!n) return [all, 0];
     const base = baseSubject(subject), own = ownSplit(), nums = all.map(s => studentSubgroup(s, base, own));
     if (!nums.some(Boolean)) return [all, 0];
@@ -310,7 +321,7 @@
     const meta = `<div class="meta">${l.room ? `<span>${ic("door")}${esc(l.room)}</span>` : ""}${l.teacher ? `<span>${ic("teacher")}${esc(l.teacher)}</span>` : ""}${sg ? sgChip(sg) : ""}</div>`;
     let status = changeNote(l, d);
     if (mode !== "schedule" && st !== "cancelled") {
-      const [list] = roster(l.subject), rec = DB.attendance[attKey(d, l.id)], t = summarize(rec, list);
+      const [list] = roster(l.subject, d), rec = DB.attendance[attKey(d, l.id)], t = summarize(rec, list);
       if (st === "live") {
         const left = toMin(e) - nowMin(), done = (nowMin() - toMin(b)) / (toMin(e) - toMin(b)) * 100;
         status += `<div class="lesson__status lesson__status--live">${ic("clock")}<b>Идёт сейчас</b> · осталось ${left} мин</div>${bar(done, "var(--primary)", true)}`;
@@ -756,7 +767,7 @@
   SCREENS.mark = (id, ds) => {
     const d = parseISO(ds) || TODAY, l = findLesson(id, d);
     if (!l) return { title: "Занятие не найдено", back: "#journal", nav: "journal", html: empty("journal", "Занятие не найдено", "Возможно, его удалили из расписания.", `<a class="btn btn--soft" href="#journal">К журналу</a>`) };
-    const k = attKey(d, l.id), [list, sg] = roster(l.subject);
+    const k = attKey(d, l.id), [list, sg] = roster(l.subject, d);
     if (!MK || MK.k !== k) {
       const rec = DB.attendance[k];
       // по умолчанию все «+», а у тех, кто на больничном, — «у»
@@ -818,7 +829,7 @@
   SCREENS.group = (tab) => {
     if (tab) S.groupTab = tab;
     S.from = "group";
-    const isT = S.groupTab === "teachers", list = students();
+    const isT = S.groupTab === "teachers", list = students(), away = allStudents().filter(s => !inGroup(s));
     const order = { head: 0, deputy: 1 }, leaders = list.filter(s => s.role in order).sort((a, b) => order[a.role] - order[b.role]);
     let body;
     if (isT) body = DB.teachers.length ? `<div class="grid grid--cols" id="people">${DB.teachers.slice().sort(byName).map(teacherCard).join("")}</div>` : empty("teacher", "", "Преподавателей пока нет. Они появятся сами из расписания или добавьте их кнопкой «+».");
@@ -826,7 +837,9 @@
         ${sectionHead("crown", "Актив группы", `<button class="link" data-act="form" data-f="deputies">Замы</button>`)}
         ${leaders.length ? `<div class="card list">${leaders.map(studentCard).join("")}</div>` : `<p class="hint" style="text-align:left">Старосту выберите в карточке студента, замов — кнопкой «Замы».</p>`}
         ${sectionHead("group", "Студенты", "", list.length)}
-        <div class="card list list--cols">${list.map(studentCard).join("")}</div></div>`
+        <div class="card list list--cols">${list.map(studentCard).join("")}</div>
+        ${away.filter(s => s.status === "academ").length ? `${sectionHead("calendar", "Академический отпуск", "", away.filter(s => s.status === "academ").length)}<div class="card list list--cols list--away">${away.filter(s => s.status === "academ").map(studentCard).join("")}</div>` : ""}
+        ${away.filter(s => s.status === "expelled").length ? `${sectionHead("close", "Отчислены", "", away.filter(s => s.status === "expelled").length)}<div class="card list list--cols list--away">${away.filter(s => s.status === "expelled").map(studentCard).join("")}</div>` : ""}</div>`
       : empty("group", "В группе нет студентов", "Добавьте их по одному кнопкой «+» или сразу списком.", `<button class="btn btn--soft" data-act="form" data-f="addMany">${ic("add_many")}Добавить списком</button>`);
     return {
       title: "Группа", sub: `${groupName()} · ${list.length} ${plural(list.length, ["студент", "студента", "студентов"])}`, nav: "group", fab: isT ? "teacher" : "student",
@@ -845,7 +858,7 @@
     const role = s.role === "head" ? `<span style="color:var(--warn-ink)">${ic("crown")} Староста</span>` : s.role === "deputy" ? `<span>${ic("deputy")} Зам. старосты</span>` : "";
     const p = parseBday(s.birthday);
     const ill = sickOn(s.id, TODAY);
-    const meta = [role, ill ? `<span style="color:var(--excused-ink)">${ic("sick")} на больничном до ${fmtDate(parseISO(ill.to))}</span>` : "", s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
+    const meta = [!inGroup(s) ? `<span style="color:var(--${s.status === "expelled" ? "bad" : "warn"}-ink);font-weight:var(--fw-bold)">${statusText(s)}</span>` : "", role, ill ? `<span style="color:var(--excused-ink)">${ic("sick")} на больничном до ${fmtDate(parseISO(ill.to))}</span>` : "", s.subgroup ? sgChip(s.subgroup) : "", s.phone ? `<span class="num">${ic("phone")} ${esc(s.phone)}</span>` : "", p ? `<span>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}</span>` : "", s.note ? `<span class="ellipsis" style="max-width:100%">${esc(s.note)}</span>` : ""].join("");
     return `<a class="list__row" href="#student/${esc(s.id)}" data-search="${esc(nameKey(s.name + " " + (s.phone || "")))}">
       ${avatar(s.name)}<div class="person__body"><div class="person__name">${esc(s.name)}</div>${meta ? `<div class="person__meta">${meta}</div>` : ""}</div>${ic("right", "list__chev")}</a>`;
   }
@@ -1023,7 +1036,7 @@
     const filter = subs.length ? `<div class="filter" role="group" aria-label="Предмет"><button aria-pressed="${!S.statsSubject}" data-act="statsSubj" data-s="">Все предметы</button>${subs.map(s => `<button aria-pressed="${S.statsSubject === s}" data-act="statsSubj" data-s="${esc(s)}" title="${esc(s)}"><span>${esc(s)}</span></button>`).join("")}</div>` : "";
     const head = { title: "Итоги", sub: `${periodTitle(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: "#journal", nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
     if (!st.all.length) return { ...head, html: `${periodTabs("statsPeriod")}${filter}${empty("chart", "Пока нет отметок", `За период «${periodTitle(S.statsPeriod)}» ещё нет отмеченных пар. Итоги появятся после первой отметки в журнале.`)}` };
-    const P = st.pct ?? 0, risk = riskPct(), list = students().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
+    const P = st.pct ?? 0, risk = riskPct(), list = allStudents().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
     const low = list.filter(x => x.p < risk).length;
     const avgOf = f => Math.round(recs.reduce((a, x) => a + Object.values(x.r.marks || {}).filter(f).length, 0) / recs.length);
     const heat = slotHeat(st.bySlot), weeks = Object.keys(st.byWeek).length >= 2;
@@ -1051,7 +1064,7 @@
       <p class="hint" style="text-align:left">Засечка на полосе — порог ${risk}%. Нажмите на студента, чтобы открыть его пропуски.</p>
       <div class="card list list--cols">${list.map(({ s, p, abs, exc }) => `<a class="list__row" href="#student/${esc(s.id)}" data-act="fromStats">
         ${avatar(s.name)}<div class="person__body"><div class="bar-row__head"><span class="person__name">${esc(s.name)}</span><b class="num" style="color:${pctInk(p)}">${p}%</b></div>
-        <div style="margin:6px 0 4px">${barMark(p, pctColor(p), risk, `порог ${risk}%`)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
+        <div style="margin:6px 0 4px">${barMark(p, pctColor(p), risk, `порог ${risk}%`)}</div><div class="person__meta num">пропусков: ${abs}${exc ? ` · уваж.: ${exc}` : ""}${!inGroup(s) ? ` · ${statusText(s)}` : ""}</div></div>${ic("right", "list__chev")}</a>`).join("")}</div>` };
   };
 
   /* ----- выгрузка в Excel: «Сводка» + лист-ведомость на каждый предмет ----- */
@@ -1062,7 +1075,8 @@
     return n.length <= 31 ? n : n.slice(0, 30).replace(/[ ,.-]+$/, "") + "…";
   }
   function attendanceWorkbook(recs, periodTitle) {
-    const X = XLSX.S, col = XLSX.col, list = students(), group = DB.settings.group;
+    const X = XLSX.S, col = XLSX.col, group = DB.settings.group;
+    const list = allStudents().filter(s => inGroup(s) || recs.some(x => (x.r.marks || {})[s.id]));
     const headTitle = (group ? `Группа ${group} · ` : "") + periodTitle;
     const pctCell = (p, none = X.CENTER) => p != null ? [p, p >= 85 ? X.PCT_OK : p >= 70 ? X.PCT_WARN : X.PCT_BAD] : ["", none];
     const markCell = m => m === "н" ? ["н", X.ABSENT] : m === "у" ? ["у", X.EXCUSED] : m === "+" ? ["+", X.PRESENT] : ["", X.CENTER];
@@ -1116,6 +1130,21 @@
   }
 
   /* ----- Студент ----- */
+  // учится ли в группе: академический отпуск и отчисление — с датой; прошлые отметки остаются в журнале
+  function statusCard(s) {
+    const hist = (s.history || []).map(h => `<div class="mini__row"><div class="mini__body"><div class="mini__title">${h.kind === "expelled" ? "Был отчислен" : "Академ. отпуск"}: ${fmtDate(parseISO(h.from))} — ${fmtDate(parseISO(h.to))}</div>${h.note ? `<div class="mini__sub">${esc(h.note)}</div>` : ""}</div></div>`).join("");
+    if (!s.status) return `<section class="card"><div class="card__head">${ic("school")}<h3>Учёба в группе</h3></div>
+      <p class="muted" style="font-size:14px;margin-bottom:12px">Учится в группе. Если студент уходит в академ или его отчисляют — укажите дату: с неё он пропадёт из отметок, сдач и сборов, а прошлые отметки останутся.</p>
+      <div class="btn-row"><button class="btn btn--soft" data-act="form" data-f="academ" data-id="${esc(s.id)}">${ic("calendar")}Академ. отпуск</button><button class="btn btn--danger" data-act="form" data-f="expel" data-id="${esc(s.id)}">${ic("close")}Отчислить</button></div>
+      ${hist ? `<div class="mini" style="margin-top:12px">${hist}</div>` : ""}</section>`;
+    const ex = s.status === "expelled", soon = s.status_from > key(TODAY);
+    return `<section class="card status-card status-card--${ex ? "bad" : "warn"}"><div class="card__head">${ic(ex ? "close" : "calendar")}<h3>${ex ? "Отчислен" : "Академический отпуск"}${soon ? " — с " + fmtDate(parseISO(s.status_from)) : ""}</h3></div>
+      <p style="font-size:14px;margin-bottom:4px">${esc(statusText(s))}${s.status_note ? ` · ${esc(s.status_note)}` : ""}</p>
+      <p class="muted" style="font-size:13px;margin-bottom:12px">${ex ? "В отметках, сдачах и сборах его нет. Прошлые отметки остались в журнале и итогах." : `В отметках его нет${s.status_to ? ` до ${fmtDate(parseISO(s.status_to))} — потом вернётся в списки сам` : ""}. Прошлые отметки остались.`}</p>
+      <div class="btn-row"><button class="btn btn--soft" data-act="studentReturn" data-id="${esc(s.id)}">${ic("back")}${ex ? "Восстановить в группе" : "Вышел из академа"}</button>
+        <button class="btn btn--neutral" data-act="form" data-f="${ex ? "expel" : "academ"}" data-id="${esc(s.id)}">${ic("edit")}Изменить</button></div>
+      ${hist ? `<div class="mini" style="margin-top:12px">${hist}</div>` : ""}</section>`;
+  }
   SCREENS.student = (id) => {
     const s = DB.students.find(x => x.id === id);
     const back = S.from === "stats" ? "#stats" : "#group", nav = S.from === "stats" ? "journal" : "group";
@@ -1135,11 +1164,12 @@
         <button class="icon-btn" data-act="form" data-f="sick" data-id="${esc(x.id)}" aria-label="Изменить" title="Изменить">${ic("edit")}</button></div>`).join("")}</div>`
         : `<p class="muted" style="font-size:14px">Укажите даты больничного — пары в эти дни отметятся «У» сами.</p>`}</section>`;
     return {
-      title: "Студент", sub: (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
+      title: "Студент", sub: !inGroup(s) ? statusText(s) : (s.subgroup ? `${s.subgroup}-я подгруппа` : "без подгруппы") + roleTxt, back, nav,
       actions: [["edit", "Редактировать", "form", "student", s.id]],
       html: `
         <section class="card profile">${avatar(s.name, "avatar--lg")}<div style="min-width:0"><h2>${esc(s.name)}</h2>
-          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${illNow ? `<span style="color:var(--excused-ink);font-weight:var(--fw-bold)">${ic("sick")} на больничном до ${fmtDate(parseISO(illNow.to))}</span>` : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
+          <div class="person__meta">${s.subgroup ? sgChip(s.subgroup) : ""}${illNow ? `<span style="color:var(--excused-ink);font-weight:var(--fw-bold)">${ic("sick")} на больничном до ${fmtDate(parseISO(illNow.to))}</span>` : ""}${s.phone ? `<a class="num" href="tel:${esc(s.phone.replace(/[^+\d]/g, ""))}">${ic("phone")} ${esc(s.phone)}</a>` : ""}${s.email ? `<a href="mailto:${esc(s.email)}">${ic("email")} ${esc(s.email)}</a>` : ""}${s.telegram ? `<a href="https://t.me/${esc(s.telegram.replace(/^\+/, "+"))}" target="_blank" rel="noopener">${ic("telegram")} ${esc(tgLabel(s.telegram))}</a>` : ""}${bday}${s.note ? `<span>${esc(s.note)}</span>` : ""}</div></div></section>
+        ${statusCard(s)}
         ${sickCard}
         ${periodTabs("studentPeriod")}
         ${!st.all.length ? empty("chart", "Отметок пока нет", `За период «${periodTitle(S.studentPeriod)}» у студента нет отметок.`) : `
@@ -1377,7 +1407,7 @@
       lessonsOn(d).forEach(l => {
         if (lessonState(l, d) !== "past") return;
         const marks = {};
-        roster(l.subject)[0].forEach(s => { marks[s.id] = R() < habit[s.id] ? "+" : R() < 0.3 ? "у" : "н"; });
+        roster(l.subject, d)[0].forEach(s => { marks[s.id] = R() < habit[s.id] ? "+" : R() < 0.3 ? "у" : "н"; });
         DB.attendance[attKey(d, l.id)] = { subject: l.subject, num: l.num || 0, kind: l.kind || "", marks };
       });
     const created = Math.floor(Date.now() / 1000), map = list => Object.fromEntries(list.map(id => [id, 1]));
@@ -1747,8 +1777,23 @@
         ${field("Подгруппа", select("subgroup", [[0, "Не указана"], ...Array.from({ length: Math.max(n, 3) }, (_, i) => [i + 1, `${i + 1}-я подгруппа`])], s?.subgroup || 0))}
         ${field("Телефон", `<input name="phone" type="tel" value="${esc(s?.phone || "")}" placeholder="+7 900 000-00-00">`)}
         ${field("День рождения", `<input name="birthday" inputmode="decimal" autocomplete="off" value="${esc(s?.birthday || "")}" placeholder="05.11 или 05.11.2007">`)}
+        ${field("Почта", `<input name="email" type="email" value="${esc(s?.email || "")}" placeholder="ivanov@mail.ru">`)}
+        ${field("Telegram", `<input name="telegram" value="${esc(s?.telegram ? tgLabel(s.telegram) : "")}" placeholder="@username">`)}
       </div><p class="hint" style="text-align:left;margin:-4px 0 12px">${ic("cake")} За неделю до дня рождения и в сам день приложение напомнит. С годом рождения покажем, сколько исполнится.</p>
       ${field("Заметка", textarea("note", s?.note || ""))}${formBtns(s && "delStudent", s?.id)}</form>`; },
+    // академический отпуск и отчисление
+    academ: (id) => { const s = DB.students.find(x => x.id === id) || {}, cur = s.status === "academ";
+      return `${sheetHead("calendar", "var(--warn)", "Академический отпуск")}<form data-form="academ" data-id="${esc(id)}">
+      <p class="muted" style="margin:-6px 0 12px;font-size:14px">${esc(s.name || "")}</p>
+      <div class="grid grid--cols2" style="gap:0 12px">${field("С какого числа", `<input name="from" type="date" required value="${esc(cur ? s.status_from : key(TODAY))}">`)}${field("До (если известно)", `<input name="to" type="date" value="${esc(cur ? s.status_to || "" : "")}">`)}</div>
+      ${field("Приказ или причина", `<input name="note" value="${esc(cur ? s.status_note || "" : "")}" placeholder="Приказ № 123 от 01.10, по здоровью">`)}
+      <p class="hint" style="text-align:left;margin:0 0 12px">С этой даты студента не будет в отметках, сдачах и сборах. С датой выхода он вернётся в списки сам.</p>${formBtns()}</form>`; },
+    expel: (id) => { const s = DB.students.find(x => x.id === id) || {}, cur = s.status === "expelled";
+      return `${sheetHead("close", "var(--bad)", "Отчисление")}<form data-form="expel" data-id="${esc(id)}">
+      <p class="muted" style="margin:-6px 0 12px;font-size:14px">${esc(s.name || "")}</p>
+      ${field("Дата отчисления", `<input name="from" type="date" required value="${esc(cur ? s.status_from : key(TODAY))}">`)}
+      ${field("Приказ или причина", `<input name="note" value="${esc(cur ? s.status_note || "" : "")}" placeholder="Приказ № 123 от 01.10, по собственному желанию">`)}
+      <p class="hint" style="text-align:left;margin:0 0 12px">Студент перейдёт в раздел «Отчислены». Прошлые отметки останутся в журнале, итогах и выгрузке. Если ошиблись — «Восстановить в группе» в его карточке.</p>${formBtns()}</form>`; },
     addMany: () => `${sheetHead("add_many", "var(--accent-2)", "Добавить списком")}<form data-form="many">
       ${field("Список группы — по человеку на строку", textarea("list", "", 9, "Иванов Иван\nПетрова Анна Сергеевна\n…"))}
       <div class="btn-row" style="margin:-4px 0 10px">${fileBtn("list")}</div>
@@ -1961,10 +2006,19 @@
       case "student": {
         if (!trim(v.name)) return err("Укажите фамилию и имя");
         if (trim(v.birthday) && !parseBday(v.birthday)) return err("День рождения — в формате ДД.ММ или ДД.ММ.ГГГГ");
+        const [tg, tgErr] = normTelegram(v.telegram); if (tgErr) return err(tgErr);
+        if (trim(v.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trim(v.email))) return err("Почта — в виде name@mail.ru");
         const s = DB.students.find(x => x.id === id) || { id: newId(), name: "", phone: "", birthday: "", note: "", role: "" };
         if (v.role === "head") DB.students.forEach(o => { if (o !== s && o.role === "head") o.role = ""; }); // староста в группе один
-        Object.assign(s, { name: trim(v.name).replace(/\s+/g, " "), role: v.role, subgroup: +v.subgroup, phone: trim(v.phone), birthday: trim(v.birthday), note: trim(v.note) });
+        Object.assign(s, { name: trim(v.name).replace(/\s+/g, " "), role: v.role, subgroup: +v.subgroup, phone: trim(v.phone), birthday: trim(v.birthday), note: trim(v.note), email: trim(v.email), telegram: tg || "" });
         if (!id) { DB.students.push(s); msg = "Студент добавлен"; } break;
+      }
+      case "academ": case "expel": {
+        const s = DB.students.find(x => x.id === id); if (!s) break;
+        if (!parseISO(v.from)) return err("Укажите дату");
+        if (v.to && v.to <= v.from) return err("Дата выхода должна быть позже начала");
+        Object.assign(s, { status: f.dataset.form === "expel" ? "expelled" : "academ", status_from: v.from, status_to: f.dataset.form === "expel" ? "" : (v.to || ""), status_note: trim(v.note) });
+        msg = f.dataset.form === "expel" ? "Студент отчислен — прошлые отметки сохранены" : "Академический отпуск оформлен"; break;
       }
       case "many": {
         const names = parseNames(v.list);
@@ -2175,7 +2229,15 @@
     delEvent: el => del(el, "events", "Удалить событие?"),
     delLesson: el => del(el, "lessons", "Удалить пару из расписания?"),
     delTeacher: el => del(el, "teachers", "Удалить преподавателя?"),
-    delStudent: el => del(el, "students", "Удалить студента? Его отметки останутся в журнале."),
+    delStudent: el => del(el, "students", "Удалить студента совсем? Если он ушёл в академ или отчислен — лучше отметьте это в его карточке."),
+    // вышел из академа / восстановлен: прошлый период уходит в историю
+    studentReturn: el => {
+      const s = DB.students.find(x => x.id === el.dataset.id); if (!s) return;
+      const k = key(TODAY), to = s.status === "academ" && s.status_to && s.status_to < k ? s.status_to : k;
+      if (s.status_from && s.status_from < k) (s.history ||= []).push({ kind: s.status, from: s.status_from, to, note: s.status_note || "" });
+      ["status", "status_from", "status_to", "status_note"].forEach(f => delete s[f]);
+      persist(); render(true); toast("Студент снова в группе");
+    },
     showPast: el => { S.showPast = el.dataset.v === "1"; render(true); },
     going: el => openSheet(FORMS.going(el.dataset.id)),
     goingToggle: el => {
