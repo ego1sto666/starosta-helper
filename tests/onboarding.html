@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><title>onboarding</title>
+<iframe id="f" style="width:390px;height:850px;border:0"></iframe><script>
+const output = [], bad = [], frame = document.getElementById("f"), wait = ms => new Promise(r => setTimeout(r, ms));
+const W = () => frame.contentWindow, D = () => frame.contentDocument, one = s => D().querySelector(s);
+const data = () => JSON.parse(W().localStorage.getItem("starosta.data") || "null");
+function check(x, label) { output.push(`${x ? "OK" : "FAIL"}: ${label}`); if (!x) bad.push(label); }
+async function until(fn) { for (let i = 0; i < 80; i++) { const x = fn(); if (x) return x; await wait(100); } throw Error("timeout"); }
+async function load(hash = "") { frame.src = "/index.html?r=" + Math.random() + hash; await new Promise(r => frame.onload = r); await until(() => one('[data-act="startWizard"]')); }
+function input(el, v) { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }
+async function run() {
+  localStorage.clear(); await load();
+  one('[data-act="startWizard"]').click(); await until(() => W().location.hash === "#setup" && one('form[data-form="setupIdentity"]'));
+  let f = one('form[data-form="setupIdentity"]'); input(f.group, "ПИ-21"); input(f.university, "Другой университет"); f.requestSubmit();
+  await until(() => data()?.settings.setup_step === 2);
+  check(data().settings.group === "ПИ-21" && data().settings.university === "Другой университет", "вуз и группа сохранены");
+  check(!one('[data-f="nntu"]'), "другому вузу не предлагают импорт НГТУ");
+  one('[data-act="wizardRoster"]').click(); f = await until(() => one('form[data-form="contacts"]'));
+  check(f.addMissing.checked, "в мастере добавление студентов включено");
+  input(f.list, "ФИО\tТелефон\tПочта\tПодгруппа\nИванов Иван\t89001234567\tivanov@example.com\t1\nПетрова Анна\t\t\t2");
+  await until(() => one("#listPreview")?.textContent.includes("Добавятся")); f.requestSubmit();
+  await until(() => data().students.length === 2);
+  check(data().students[0].phone.startsWith("+7") && data().students[0].email === "ivanov@example.com", "состав и контакты импортированы");
+  check(data().students[1].subgroup === 2, "подгруппа перенесена из списка");
+  one('[data-act="setupNext"]').click(); await until(() => data().settings.setup_step === 3);
+  const table = "Предмет\tДень\tВремя\tНеделя\tТип\tАудитория\tПреподаватель\tПодгруппа\nИнформатика\tПн\t08:30–10:00\tКаждая\tПрактика\t101\tИванова И. И.\t1\nИнформатика\tПн\t08:30–10:00\tКаждая\tПрактика\t102\tИванова И. И.\t2\nМатематика\tЧт\t10:20–11:50\tНечётная\tЛекция\t201\tПетров П. П.\t";
+  one('[data-f="scheduleImport"]').click(); f = await until(() => one('form[data-form="scheduleImport"]'));
+  input(f.list, table); await until(() => one("#schedulePreview")?.textContent.includes("новых: 3")); f.requestSubmit();
+  await until(() => data().lessons.length === 3);
+  let d = data(); check(d.lessons[0].num === 1 && d.lessons[2].num === 2 && d.lessons[2].week === "odd", "время, день и чётность разобраны");
+  check(d.settings.subgroup_count === 2 && d.teachers.length === 2, "подгруппы и преподаватели созданы");
+  const id = d.lessons[0].id;
+  one('[data-f="scheduleImport"]').click(); f = await until(() => one('form[data-form="scheduleImport"]'));
+  input(f.list, table.replace("Практика\t101", "Практика\t111"));
+  await until(() => one("#schedulePreview")?.textContent.includes("изменятся: 1")); f.requestSubmit();
+  await until(() => data().lessons[0].room === "111");
+  check(data().lessons.length === 3 && data().lessons[0].id === id, "повторный импорт сохранил идентификатор пары");
+  one('[data-f="scheduleImport"]').click(); f = await until(() => one('form[data-form="scheduleImport"]'));
+  input(f.list, "Дата;Пара;Предмет;Аудитория\n15.11.2026;3;Консультация;А-12"); f.requestSubmit();
+  await until(() => data().oneoff.length === 1);
+  check(data().oneoff[0].date === "2026-11-15" && data().lessons.length === 3, "пара на конкретную дату не стала еженедельной");
+  one('[data-f="scheduleImport"]').click(); f = await until(() => one('form[data-form="scheduleImport"]'));
+  input(f.list, "День\tПара\tПредмет\nОшибка\t1\tХимия"); f.requestSubmit(); await wait(150);
+  check(!one(".form-err").hidden && data().lessons.length === 3, "неверная строка не меняет расписание");
+  one('#sheet [data-act="closeSheet"]').click(); await wait(220);
+  one('[data-act="setupNext"]').click(); await until(() => data().settings.setup_step === 4);
+  one('[data-act="setupFinish"]').click(); await until(() => W().location.hash === "#home");
+  check(data().settings.setup_step === 0, "мастер завершён и открыта главная");
+  output.push("ERRORS: " + (bad.join(" | ") || "нет"));
+}
+run().catch(e => output.push("FAIL: " + e.message, "ERRORS: " + e.message)).finally(() => fetch("/__save/result-onboarding.txt", { method: "POST", body: output.join("\n") }));
+</script>

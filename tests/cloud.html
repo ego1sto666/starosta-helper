@@ -21,7 +21,11 @@ async function run(){
   frame.contentWindow.location.hash='#account';
   const form=await until(()=>d.querySelector('form[data-cloud-create]'),'форма создания группы');
   form.elements.university.value='Другой университет';form.elements.title.value='АБ-12';form.requestSubmit();
+  await until(()=>frame.contentWindow.location.hash==='#setup','мастер новой группы');
+  check(!!d.querySelector('form[data-form="setupIdentity"]'),'новая группа открывает мастер');
+  d.querySelector('[data-act="setupLater"]').click();
   await until(()=>frame.contentWindow.location.hash==='#home','открытие группы');
+  await until(()=>d.querySelector('.topbar')?.textContent.includes('АБ-12'),'заголовок группы');
   check(d.querySelector('.topbar')?.textContent.includes('АБ-12'),'группа другого вуза открыта');
   frame.contentWindow.location.hash='#mail';
   const item=await until(()=>d.querySelector('[data-act="mailCreate"]'),'входящее письмо');

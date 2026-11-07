@@ -219,7 +219,7 @@
     const name = baseSubject((raw || "").trim());
     return [...new Set([...DB.lessons.map(l => baseSubject(l.subject)), ...DB.oneoff.map(l => baseSubject(l.subject)), ...ownSplit()])].find(x => nameKey(x) === nameKey(name)) || name;
   };
-  function subgroupCounts() { const out = {}; DB.lessons.forEach(l => { const n = subgroupOf(l.subject); if (n) { const b = baseSubject(l.subject); out[b] = Math.max(out[b] || 0, n); } }); return out; }
+  function subgroupCounts() { const out = {}; [...DB.lessons, ...DB.oneoff].forEach(l => { const n = subgroupOf(l.subject); if (n) { const b = baseSubject(l.subject); out[b] = Math.max(out[b] || 0, n); } }); return out; }
   function ownSplit() {
     return [...new Set(DB.settings.own_split || [])].sort((a, b) => nameKey(a).localeCompare(nameKey(b), "ru"));
   }
@@ -765,7 +765,7 @@
     const body = !info.active && !list.length ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="term">${ic("calendar")}Период занятий</button>`)
       : list.length ? timeline(list, d, "journal")
       : semCount ? empty("coffee", "Пар нет", d.getDay() === 0 ? "Воскресенье — выходной." : "В этот день занятий нет. Нажмите «+», чтобы добавить пару.")
-      : empty("schedule", "В расписании пока нет пар", nntuAvailable() ? "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+»." : "Добавьте первую пару кнопкой «+».", nntuAvailable() ? `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>` : "");
+      : empty("schedule", "В расписании пока нет пар", "Загрузите таблицу расписания или добавьте первую пару кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="scheduleImport">${ic("download")}Импортировать расписание</button>`);
     return {
       title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
       actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ...(nntuAvailable() ? [["download", "Обновить расписание с сайта НГТУ", "form", "nntu"]] : []), ["calendar", "Выбрать дату", "pickDate"]],
@@ -868,7 +868,7 @@
         <div class="card list list--cols">${list.map(studentCard).join("")}</div>
         ${away.filter(s => s.status === "academ").length ? `${sectionHead("calendar", "Академический отпуск", "", away.filter(s => s.status === "academ").length)}<div class="card list list--cols list--away">${away.filter(s => s.status === "academ").map(studentCard).join("")}</div>` : ""}
         ${away.filter(s => s.status === "expelled").length ? `${sectionHead("close", "Отчислены", "", away.filter(s => s.status === "expelled").length)}<div class="card list list--cols list--away">${away.filter(s => s.status === "expelled").map(studentCard).join("")}</div>` : ""}</div>`
-      : empty("group", "В группе нет студентов", "Добавьте их по одному кнопкой «+» или сразу списком.", `<button class="btn btn--soft" data-act="form" data-f="addMany">${ic("add_many")}Добавить списком</button>`);
+      : empty("group", "В группе нет студентов", "Добавьте их по одному кнопкой «+» или загрузите таблицу.", `<button class="btn btn--soft" data-act="wizardRoster">${ic("add_many")}Импортировать состав</button>`);
     return {
       title: "Группа", sub: `${groupName()} · ${list.length} ${plural(list.length, ["студент", "студента", "студентов"])}`, nav: "group", fab: isT ? "teacher" : "student",
       actions: [["subgroups", "Подгруппы", "go", "#subgroups"], ["contact", "Контакты из таблицы или телефона", "form", "contacts"], ["add_many", "Добавить списком", "form", "addMany"]],
@@ -1405,6 +1405,9 @@
             ${sectionHead("school", "Группа и учебный год")}
             <section class="card" style="padding:4px 14px">
               ${row("Название группы", esc(DB.settings.group || "не указано"), editBtn("groupName"))}
+              ${row("Мастер настройки", "Название, состав и расписание группы", `<a class="btn btn--soft btn--sm" href="#setup">${ic("school")}Открыть</a>`)}
+              ${row("Импорт состава", "Список, контакты и подгруппы из таблицы", `<button class="btn btn--neutral btn--sm" data-act="wizardRoster">${ic("add_many")}Загрузить</button>`)}
+              ${row("Импорт расписания", "Таблица Excel или CSV из любого вуза", `<button class="btn btn--neutral btn--sm" data-act="form" data-f="scheduleImport">${ic("download")}Загрузить</button>`)}
               ${nntuAvailable() ? row("Расписание НГТУ", ng ? `Группа ${esc(ng)}${synced ? ` · обновлено ${fmtDate(synced)}` : ""}` : "Не подключено — пары можно загрузить с сайта НГТУ",
                 `<button class="btn btn--${ng ? "soft" : "primary"} btn--sm" data-act="form" data-f="nntu">${ic("download")}${ng ? "Обновить" : "Загрузить"}</button>`)
                 : ""}
@@ -1455,7 +1458,7 @@
   const cloudKey = (uid, gid) => `starosta.cloud.${uid}.${gid}`;
   const snapshotKey = (uid, gid) => `sync.${uid}.${gid}`;
   const accountReady = () => !!(ACCOUNT_API && ACCOUNT_API.enabled() && SERVER_AVAILABLE !== false);
-  const nntuAvailable = () => !BOUND_GROUP || /ннту|алексеева/i.test(BOUND_GROUP.university || "");
+  const nntuAvailable = () => /ннту|алексеева/i.test(BOUND_GROUP?.university || DB?.settings?.university || "") || (!BOUND_GROUP && !DB?.settings?.university);
   async function loadGroups() { GROUPS = await ACCOUNT_API.groups.list(); }
   async function bindGroup(group, navigate = true) {
     if (!ACCOUNT || !GROUPS.some(g => g.id === group.id)) throw Error("Нет доступа к этой группе");
@@ -1474,7 +1477,7 @@
     store.set("activeCloud", { uid: ACCOUNT.id, gid: group.id });
     try { await instance.pull(); }
     catch (e) { SYNC_STATE = "offline"; if (!DB) { SYNC.stop(); SYNC = null; BOUND_GROUP = null; activeDataKey = DATA_KEY; loadData(); throw e; } }
-    if (navigate) { location.hash = "#home"; render(); }
+    if (navigate) { location.hash = DB?.settings?.setup_step ? "#setup" : "#home"; render(); }
   }
   async function restoreAccount() {
     if (!accountReady()) return;
@@ -1610,7 +1613,10 @@
       after: fillGroups,
       html: `<div class="welcome">
         <section class="hero"><h1>Помощник старосты.<span> Вся группа под рукой.</span></h1>
-          <p>Расписание, посещаемость и дела группы НГТУ — в браузере на телефоне и компьютере. Данные хранятся только на этом устройстве.</p></section>
+          <p>Расписание, посещаемость и дела группы — для старост любого вуза. Без аккаунта данные остаются на этом устройстве.</p></section>
+        <section class="card welcome__card"><div class="card__head">${ic("school")}<h3>Настроить свою группу</h3></div>
+          <p class="muted" style="font-size:14px;margin-bottom:12px">Укажете вуз и группу, загрузите состав и расписание из таблиц. Можно пропустить шаг и вернуться позже.</p>
+          <button class="btn btn--primary btn--block btn--lg" data-act="startWizard">Начать настройку</button></section>
         <section class="card welcome__card">
           <div class="card__head">${ic("chart")}<h3>Просто посмотреть</h3></div>
           <p class="muted" style="font-size:14px;margin-bottom:12px">Пример с группой 26-ИВТ-2-1: настоящее расписание и список, посещаемость с начала занятий расставлена случайно.</p>
@@ -1635,6 +1641,29 @@
       </div>`,
     };
   }
+
+  SCREENS.setup = () => {
+    const step = Math.max(1, Math.min(4, DB.settings.setup_step || 1));
+    const progress = `<div class="setup__progress" aria-label="Шаг ${step} из 4">${[1, 2, 3, 4].map(n => `<span class="${n <= step ? "is-on" : ""}"></span>`).join("")}</div>`;
+    const next = step < 4 ? `<button class="btn btn--primary" data-act="setupNext">${step === 1 ? "Продолжить" : "Дальше"}</button>` : `<button class="btn btn--primary" data-act="setupFinish">Открыть приложение</button>`;
+    const actions = `<div class="btn-row">${step > 1 ? `<button class="btn btn--neutral" data-act="setupBack">Назад</button>` : ""}${next}</div>`;
+    const title = ["", "Вуз и группа", "Список студентов", "Расписание", "Всё готово"][step];
+    const body = step === 1 ? `<form data-form="setupIdentity" class="stack">
+      ${field("Название группы", `<input name="group" required maxlength="60" value="${esc(DB.settings.group || "")}" placeholder="Например, ПИ-21"${BOUND_GROUP ? " readonly" : ""}>`)}
+      ${field("Учебное заведение", `<input name="university" required maxlength="120" value="${esc(DB.settings.university || BOUND_GROUP?.university || "")}" placeholder="Полное или короткое название вуза"${BOUND_GROUP ? " readonly" : ""}>`)}
+      <p class="hint" style="text-align:left">Период занятий и время пар можно изменить позже в настройках.</p>${formErr}
+      <button class="btn btn--primary btn--block">Продолжить</button></form>`
+      : step === 2 ? `<p>Загрузите список из Excel, CSV или вставьте таблицу. Если есть столбцы с контактами, они тоже заполнятся. Перед сохранением увидите, кто добавится.</p>
+        <button class="btn btn--soft btn--block" data-act="wizardRoster">${ic("add_many")}Импортировать состав</button>
+        <p class="hint" style="text-align:left">Сейчас в группе: ${students().length} ${plural(students().length, ["студент", "студента", "студентов"])}. Список можно дополнить позже.</p>${actions}`
+      : step === 3 ? `<p>Подойдёт таблица с колонками «День» или «Дата», «Пара» или «Время», «Предмет». Дополнительно: неделя, тип, аудитория, преподаватель и подгруппа.</p>
+        <button class="btn btn--soft btn--block" data-act="form" data-f="scheduleImport">${ic("download")}Импортировать расписание</button>
+        ${nntuAvailable() ? `<button class="btn btn--neutral btn--block" data-act="form" data-f="nntu">Загрузить с сайта НГТУ</button>` : ""}
+        <p class="hint" style="text-align:left">Сейчас добавлено: ${DB.lessons.length + DB.oneoff.length} ${plural(DB.lessons.length + DB.oneoff.length, ["пара", "пары", "пар"])}. Таблицу можно загрузить повторно.</p>${actions}`
+      : `<p>Группа «${esc(DB.settings.group || "Без названия")}»: ${students().length} студентов, ${DB.lessons.length + DB.oneoff.length} пар.</p>
+        <p class="hint" style="text-align:left">В журнале можно отметить первую пару. Настройки и импорт останутся доступны в приложении.</p>${actions}`;
+    return { title: "Настройка группы", welcome: true, html: `<div class="welcome setup"><div class="hero"><p class="muted">Шаг ${step} из 4</p><h1>${title}</h1></div>${progress}<section class="card welcome__card stack">${body}</section><button class="link welcome__skip" data-act="setupLater">Продолжить позже</button></div>` };
+  };
 
   /* ----- Документы в деканат (справки, заявления) — часть «Сборов» ----- */
   const DOC_HINTS = ["Справка 086/у", "Флюорография", "Согласие на обработку персональных данных", "Копия паспорта", "Копия СНИЛС", "Копия ИНН",
@@ -1827,7 +1856,8 @@
 
   /* ---------- контакты списком: таблица, ответы Google Формы, контакты телефона .vcf ---------- */
   const C_HEAD = { name: /^(фио|ф\.?и\.?о\.?|фамилия.*имя|студент|name|full ?name)/i, fam: /^фамилия$/i, first: /^имя$/i, mid: /^отчество$/i,
-    phone: /(телефон|номер|phone|тел\.?$|mobile)/i, email: /(почт|e-?mail|mail)/i, telegram: /(telegram|телеграм|тг\b|tg\b|ник)/i, birthday: /(рожден|birthday|^др$|^д\.р\.)/i };
+    phone: /(телефон|номер|phone|тел\.?$|mobile)/i, email: /(почт|e-?mail|mail)/i, telegram: /(telegram|телеграм|тг\b|tg\b|ник)/i, birthday: /(рожден|birthday|^др$|^д\.р\.)/i,
+    subgroup: /^(подгруппа|п\/г|subgroup)$/i };
   const isEmail = c => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c), isTg = c => /^@[A-Za-z][A-Za-z0-9_]{3,31}$/.test(c) || /t\.me\//i.test(c);
   const isPhone = c => (c.replace(/\D/g, "").length >= 10 && c.replace(/\D/g, "").length <= 12) && /^[+\d][\d\s()-]+$/.test(c);
   const isDate = c => /^\d{1,2}[./-]\d{1,2}([./-]\d{2,4})?$/.test(c) || /^\d{4}-\d{2}-\d{2}$/.test(c);
@@ -1865,10 +1895,10 @@
     rows.forEach(r => {
       const head = {}; r.forEach((c, i) => { for (const [k, re] of Object.entries(C_HEAD)) if (head[k] == null && re.test(c) && !(k === "name" && C_HEAD.fam.test(c))) { head[k] = i; break; } });
       if (Object.keys(head).length >= 2 || (head.name != null && r.length > 1)) { cols = head; return; }
-      const x = { name: "", phone: "", email: "", telegram: "", birthday: "" };
+      const x = { name: "", phone: "", email: "", telegram: "", birthday: "", subgroup: "" };
       if (cols) {
         x.name = cols.name != null ? r[cols.name] : [cols.fam, cols.first, cols.mid].filter(i => i != null).map(i => r[i] || "").join(" ").trim();
-        ["phone", "email", "telegram", "birthday"].forEach(k => { if (cols[k] != null) x[k] = r[cols[k]] || ""; });
+        ["phone", "email", "telegram", "birthday", "subgroup"].forEach(k => { if (cols[k] != null) x[k] = r[cols[k]] || ""; });
       } else r.forEach(c => {
         const v = c.replace(/^\s*(№\s*)?\d+\s*[.)]\s+/, "");
         if (!x.email && isEmail(v)) x.email = v; else if (!x.telegram && isTg(v)) x.telegram = v; else if (!x.birthday && isDate(v)) x.birthday = v;
@@ -1879,18 +1909,21 @@
     });
     return out;
   }
-  const C_FIELDS = [["phone", "телефон"], ["email", "почта"], ["telegram", "Telegram"], ["birthday", "день рождения"]];
+  const C_FIELDS = [["phone", "телефон"], ["email", "почта"], ["telegram", "Telegram"], ["birthday", "день рождения"], ["subgroup", "подгруппа"]];
   // что поменяется: по каждому найденному студенту — какие поля заполним
   function contactsPlan(f) {
     const rows = parseContacts(f.list.value), over = f.overwrite.checked, add = f.addMissing.checked;
-    const plan = { rows, upd: [], fresh: [], unknown: [], many: [], fill: Object.fromEntries(C_FIELDS.map(([k]) => [k, 0])) };
+    const plan = { rows, upd: [], fresh: [], unknown: [], many: [], invalidSubgroups: [], fill: Object.fromEntries(C_FIELDS.map(([k]) => [k, 0])) }, freshNames = new Set();
     rows.forEach(r => {
-      const val = { phone: r.phone ? normPhone(r.phone) : "", email: isEmail(r.email) ? r.email.trim() : "", telegram: normTelegram(r.telegram)[0] || "", birthday: r.birthday ? normBday(r.birthday) : "" };
+      const n = r.subgroup ? +((String(r.subgroup).match(/\d+/) || [0])[0]) : 0;
+      if (r.subgroup && (n < 1 || n > 9)) plan.invalidSubgroups.push(r.name);
+      const val = { phone: r.phone ? normPhone(r.phone) : "", email: isEmail(r.email) ? r.email.trim() : "", telegram: normTelegram(r.telegram)[0] || "", birthday: r.birthday ? normBday(r.birthday) : "", subgroup: n >= 1 && n <= 9 ? n : 0 };
       if (val.birthday && !parseBday(val.birthday)) val.birthday = "";
       const m = matchName(r.name);
       if (m && m.s) { const ch = C_FIELDS.map(([k]) => k).filter(k => val[k] && val[k] !== (m.s[k] || "") && (over || !m.s[k])); if (ch.length) { plan.upd.push({ s: m.s, val, ch }); ch.forEach(k => plan.fill[k]++); } }
       else if (m && m.many) plan.many.push(r.name);
-      else if (add) plan.fresh.push({ name: r.name, ...val }); else plan.unknown.push(r.name);
+      else if (add) { if (!freshNames.has(nameKey(r.name))) { freshNames.add(nameKey(r.name)); plan.fresh.push({ name: r.name, ...val }); } }
+      else plan.unknown.push(r.name);
     });
     return plan;
   }
@@ -1903,6 +1936,7 @@
       ${p.fresh.length ? `<p>Добавятся в группу: ${names5(p.fresh.map(x => x.name))}</p>` : ""}
       ${p.unknown.length ? `<p class="bad">Нет в группе: ${names5(p.unknown)}</p>` : ""}
       ${p.many.length ? `<p class="warn">Несколько похожих — уточните имя: ${names5(p.many)}</p>` : ""}
+      ${p.invalidSubgroups.length ? `<p class="bad">Подгруппа должна быть от 1 до 9: ${names5(p.invalidSubgroups)}</p>` : ""}
       ${!p.upd.length && !p.fresh.length ? `<p class="muted">Нового нечего заполнить${f.overwrite.checked ? "" : " — отметьте «Заменять уже заполненные», если нужно обновить"}.</p>` : ""}`;
   }
 
@@ -2015,6 +2049,7 @@
     // #demo — прямая ссылка на пример для гостей
     if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (!isDemo()) { ACT.demo(); if (!DB) return; } }
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
+    if (DB?.settings?.setup_step && (!location.hash || location.hash === "#home")) history.replaceState(null, "", "#setup");
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");
     if (name !== "mark") MK = null;
     current = LOCKED ? lockScreen() : (name === "account" ? SCREENS.account(args[0]) : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen());
@@ -2100,6 +2135,63 @@
       seen.add(k); out.push(name);
     });
     return out;
+  }
+  /* Таблица расписания любого вуза: столбцы распознаются по заголовкам, а изменения
+     существующих пар применяются по ключу день + номер + неделя + предмет. */
+  const SCH_HEAD = { day: /^(день|день недели|weekday|day)$/i, num: /^(№?\s*пары|номер пары|пара|slot|period)$/i,
+    date: /^(дата|date)$/i, time: /^(время|время пары|часы|time)$/i, start: /^(начало|с|start)$/i, end: /^(конец|до|end)$/i,
+    subject: /^(предмет|дисциплина|название дисциплины|курс|subject)$/i, week: /^(неделя|ч[её]тность|week)$/i,
+    kind: /^(тип|вид|тип занятия|занятие|format|type)$/i, room: /^(аудитория|кабинет|место|room)$/i,
+    teacher: /^(преподаватель|педагог|учитель|teacher)$/i, subgroup: /^(подгруппа|п\/г|subgroup)$/i };
+  function schedulePlan(text) {
+    const lines = (/\t/.test(text) ? text.split(/\r?\n/).map(l => l.split("\t")) : csvRows(text))
+      .map(r => r.map(x => String(x || "").trim())).filter(r => r.some(Boolean));
+    const cols = {}; let headerAt = -1;
+    lines.slice(0, 12).some((r, i) => { const found = {}; r.forEach((c, j) => { for (const [k, re] of Object.entries(SCH_HEAD)) if (found[k] == null && re.test(c)) { found[k] = j; break; } });
+      if ((found.day != null || found.date != null) && found.subject != null && (found.num != null || found.time != null || found.start != null)) { Object.assign(cols, found); headerAt = i; return true; } return false; });
+    if (headerAt < 0) return { rows: [], add: [], update: [], same: 0, errors: ["Нужны заголовки «День» или «Дата», «Предмет» и «Пара» или «Время»."], skipped: 0 };
+    const get = (r, k) => cols[k] == null ? "" : (r[cols[k]] || "").trim();
+    const dayNumber = v => { const s = nameKey(v).replace(/\./g, "").trim(); if (/^[1-7]$/.test(s)) return +s - 1;
+      return ["пн|понедельник|mon|monday", "вт|вторник|tue|tuesday", "ср|среда|wed|wednesday", "чт|четверг|thu|thursday", "пт|пятница|fri|friday", "сб|суббота|sat|saturday", "вс|воскресенье|sun|sunday"].findIndex(x => x.split("|").includes(s)); };
+    const rows = [], errors = [], seen = new Set(), starts = new Set(); let skipped = 0;
+    lines.slice(headerAt + 1).forEach((r, i) => {
+      const line = headerAt + i + 2, subjectRaw = get(r, "subject"), dateRaw = get(r, "date");
+      const dateText = /^\d{5}$/.test(dateRaw) && +dateRaw > 30000 && +dateRaw < 80000 ? new Date(Date.UTC(1899, 11, 30) + +dateRaw * DAY).toISOString().slice(0, 10)
+        : /^\d{1,2}[./-]\d{1,2}[./-]\d{4}$/.test(dateRaw) ? dateRaw.split(/[./-]/).reverse().map((x, j) => j ? x.padStart(2, "0") : x).join("-") : dateRaw;
+      const parsedDate = parseISO(dateText), date = parsedDate && key(parsedDate) === dateText ? dateText : "";
+      const day = date ? pyDay(parsedDate) : dayNumber(get(r, "day"));
+      if (!subjectRaw && !get(r, "day") && !dateRaw) return;
+      let subject = subjectRaw.replace(/\s+/g, " ");
+      const subgroup = get(r, "subgroup");
+      if (subgroup) { const n = +subgroup.replace(/[^\d]/g, ""); if (!(n >= 1 && n <= 9)) return errors.push(`Строка ${line}: неверная подгруппа`);
+        if (!subgroupOf(subject)) subject += ` (подгруппа ${n})`; }
+      const slot = get(r, "time"), times = slot.match(/(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})/);
+      const start = get(r, "start") || times?.[1] || "", end = get(r, "end") || times?.[2] || "";
+      const rawNum = get(r, "num"), num = rawNum ? +((rawNum.match(/\d+/) || [0])[0]) : 0;
+      const w = nameKey(get(r, "week")), week = date || !w || /^(все|кажд|all|every|еженед)/.test(w) ? "all" : /неч|odd|1\s*нед/.test(w) ? "odd" : /чет|чёт|even|2\s*нед/.test(w) ? "even" : "?";
+      if ((dateRaw && !date) || day < 0 || !subject || week === "?" || (rawNum && !(num >= 1 && num <= 12)) || (!num && !start) || (!!start !== !!end) || (start && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(start)) || (end && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(end)) || (start && end && toMin(end) <= toMin(start)))
+        return errors.push(`Строка ${line}: проверьте день, предмет, номер пары, неделю и время`);
+      const x = { subject, day, num, week, kind: get(r, "kind") || "Лекция", room: get(r, "room"), teacher: get(r, "teacher") };
+      if (date) x.date = date;
+      if (start && end) { x.start = start.padStart(5, "0"); x.end = end.padStart(5, "0"); }
+      if (!num) starts.add(start);
+      rows.push(x);
+    });
+    if (rows.some(x => !x.num)) { const sorted = [...starts].sort(); rows.forEach(x => { if (!x.num) x.num = sorted.indexOf(x.start) + 1; }); }
+    const add = [], update = []; let same = 0;
+    rows.forEach(x => { const k = [x.date || x.day, x.num, x.week, nameKey(x.subject)].join("|"); if (seen.has(k)) { skipped++; return; } seen.add(k);
+      const old = (x.date ? DB.oneoff : DB.lessons).find(l => [l.date || l.day, l.num, l.week || "all", nameKey(l.subject)].join("|") === k);
+      if (!old) add.push(x); else if (["kind", "room", "teacher", "start", "end"].some(f => (old[f] || "") !== (x[f] || ""))) update.push({ old, val: x }); else same++;
+    });
+    return { rows, add, update, same, errors, skipped };
+  }
+  function schedulePreview(f) {
+    const box = $("#schedulePreview", f); if (!box) return;
+    const p = schedulePlan(f.list.value);
+    box.innerHTML = !f.list.value.trim() ? "" : `<div class="counts"><span class="pill pill--ok num">новых: ${p.add.length}</span><span class="pill num">изменятся: ${p.update.length}</span><span class="pill num">уже есть: ${p.same}</span></div>
+      ${p.skipped ? `<p class="hint">Повторов в файле: ${p.skipped}</p>` : ""}
+      ${p.errors.length ? `<p class="bad">${esc(p.errors.slice(0, 4).join("; "))}${p.errors.length > 4 ? `; и ещё ${p.errors.length - 4}` : ""}</p>` : ""}
+      ${p.add.length || p.update.length ? `<p class="muted">${esc([...p.add, ...p.update.map(x => x.val)].slice(0, 5).map(x => `${x.date || WD_PY[x.day] || "Вс"}, ${x.num} пара — ${x.subject}`).join("; "))}</p>` : ""}`;
   }
   const nameWords = n => nameKey(n).replace(/[^a-zа-я\s-]/g, " ").split(/\s+/).filter(Boolean);
   const sameWord = (a, b) => a === b || ((a.length === 1 || b.length === 1) && a[0] === b[0]); // «И.» подходит к «Иван»
@@ -2214,13 +2306,13 @@
       <p class="hint" style="text-align:left;margin:-4px 0 6px">Нажмите, чтобы вставить:</p>
       <div class="tpl-insert">${tplValues().map(([k, hint]) => `<button type="button" class="chip-btn" data-act="tplInsert" data-v="{${k}}" title="${esc(hint)}">{${k}}</button>`).join("")}</div>
       ${formBtns(t.id && "delTpl", t.id)}</form>`; },
-    contacts: () => `${sheetHead("contact", "var(--accent-2)", "Контакты списком")}<form data-form="contacts">
-      <p class="muted" style="margin:-6px 0 12px;font-size:14px">Вставьте таблицу из Excel, Google Таблиц или ответов Google Формы — или загрузите файл (.xlsx, .csv, контакты телефона .vcf). Каждого найдём по ФИО и заполним телефон, почту, Telegram и день рождения.</p>
+    contacts: (roster = false) => `${sheetHead("contact", "var(--accent-2)", roster ? "Импорт состава группы" : "Контакты списком")}<form data-form="contacts">
+      <p class="muted" style="margin:-6px 0 12px;font-size:14px">Вставьте таблицу из Excel, Google Таблиц или ответов Google Формы — или загрузите файл (.xlsx, .csv, контакты телефона .vcf). Найдём каждого по ФИО; добавим контакты и подгруппу, если они есть в таблице.</p>
       ${field("Таблица или контакты", textarea("list", "", 8, "ФИО\tТелефон\tПочта\tTelegram\tДень рождения\nИванов Иван\t89001234567\tivanov@mail.ru\t@ivanov\t05.11.2007"))}
       <div class="btn-row" style="margin:-4px 0 10px"><button type="button" class="btn btn--neutral btn--sm" data-act="contactsFile">${ic("excel")}Из файла: .xlsx, .csv, .vcf</button><button type="button" class="btn btn--neutral btn--sm" data-act="avaMany">${ic("camera")}Фото группы</button></div>
       <p class="hint" style="text-align:left;margin:-2px 0 10px">«Фото группы»: выберите сразу несколько фото, названных по фамилии — «Иванов.jpg», «Петрова Анна.png».</p>
       <label class="check-row"><input type="checkbox" name="overwrite"> Заменять уже заполненные поля</label>
-      <label class="check-row"><input type="checkbox" name="addMissing"> Добавить в группу тех, кого в ней нет</label>
+      <label class="check-row"><input type="checkbox" name="addMissing"${roster ? " checked" : ""}> Добавить в группу тех, кого в ней нет</label>
       <div class="list-preview" id="listPreview" aria-live="polite"></div>
       ${formErr}<div class="btn-row"><button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Заполнить</button></div></form>`,
     sick: (id, sid) => { const x = DB.sick.find(e => e.id === id) || { sid: sid || S.sickFor, from: key(TODAY), to: key(TODAY) }, s = DB.students.find(e => e.id === x.sid);
@@ -2276,7 +2368,8 @@
     // что добавить в расписание: разово или насовсем
     schedAdd: () => `${sheetHead("schedule", "var(--accent-6)", "Добавить пару")}<div class="menu">
       <button class="menu__item" data-act="form" data-f="oneoff">${ic("calendar")}<span><b>Разовая пара</b><small>На конкретный день: доп. занятие, отработка, перенос</small></span></button>
-      <button class="menu__item" data-act="form" data-f="lesson">${ic("schedule")}<span><b>Пара в расписание</b><small>Повторяется каждую неделю или через неделю</small></span></button></div>`,
+      <button class="menu__item" data-act="form" data-f="lesson">${ic("schedule")}<span><b>Пара в расписание</b><small>Повторяется каждую неделю или через неделю</small></span></button>
+      <button class="menu__item" data-act="form" data-f="scheduleImport">${ic("download")}<span><b>Импортировать расписание</b><small>Таблица из Excel, CSV или другого вуза</small></span></button></div>`,
     // действия с парой конкретного дня
     lessonMenu: () => { const { id, d } = S.menu, l = dayPlan(d).find(x => x.id === id); if (!l) return `${sheetHead("info", "var(--muted)", "Пара не найдена")}`;
       const [b, e] = lessonSpan(l), item = (act, icon, title, sub, attrs = "") => `<button class="menu__item${act === "cancelLesson" ? " menu__item--bad" : ""}" data-act="${act}" ${attrs}>${ic(icon)}<span><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span></button>`;
@@ -2360,6 +2453,13 @@
       <p class="hint" style="text-align:left;margin-bottom:6px">Можно вставить из чата, Word или Excel: номера, лишние столбцы и повторы уберутся сами. Кто уже есть в группе — пропустим, никого не удаляем.</p>
       <div class="list-preview" id="listPreview" aria-live="polite"></div>
       ${formErr}<div class="btn-row"><button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Добавить</button></div></form>`,
+    scheduleImport: () => `${sheetHead("schedule", "var(--accent-6)", "Импорт расписания")}<form data-form="scheduleImport">
+      <p class="muted" style="font-size:14px;margin-bottom:12px">Вставьте таблицу или выберите .xlsx, .csv, .tsv, .txt. Порядок колонок может быть любым. Заголовки: День или Дата, Пара или Время, Предмет; остальные необязательны. Строка с датой добавится как разовая пара.</p>
+      ${field("Таблица расписания", textarea("list", "", 8, "День\tПара\tПредмет\tНеделя\tТип\tАудитория\tПреподаватель\tПодгруппа\nПн\t1\tМатематика\tКаждая\tЛекция\t101\tИванов И. И.\t"))}
+      <button type="button" class="btn btn--neutral btn--sm" data-act="tableFile">${ic("excel")}Выбрать файл</button>
+      <p class="hint" style="text-align:left;margin:10px 0">Если вместо номера пары есть «Время» (08:30–10:00), номер будет определён по порядку. Повторный импорт обновит аудиторию и преподавателя, но сохранит отметки посещаемости.</p>
+      <div class="list-preview schedule-preview" id="schedulePreview" aria-live="polite"></div>
+      ${formErr}<div class="btn-row"><button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Применить расписание</button></div></form>`,
     // подгруппы отдельными списками: основное деление или своё для предмета
     sgLists: (base = S.sgTab || "", extraN = 0) => { const opts = [["", "Основное деление (все предметы)"], ...[...new Set([...Object.keys(subgroupCounts()), ...ownSplit()])].sort((a, b) => a.localeCompare(b, "ru")).map(x => [x, x])];
       const N = splitSize(base || null) + extraN, own = ownSplit();
@@ -2462,8 +2562,9 @@
     const v = Object.fromEntries(new FormData(f)), button = f.querySelector("button"), err = f.querySelector(".form-err");
     err.hidden = true; button.disabled = true;
     try {
-      const local = v.transfer && activeDataKey === DATA_KEY && DB && !isDemo() ? structuredClone(DB) : normalize({ settings: { group: v.title.trim() } });
+      const local = v.transfer && activeDataKey === DATA_KEY && DB && !isDemo() ? structuredClone(DB) : normalize({ settings: { group: v.title.trim(), university: v.university.trim(), setup_step: 1 } });
       local.settings.group = v.title.trim();
+      local.settings.university = v.university.trim();
       const g = await ACCOUNT_API.groups.create(v.title.trim(), local, v.university.trim());
       GROUPS.push(g); await bindGroup(g);
     } catch (x) { err.textContent = x.message || "Не удалось создать группу"; err.hidden = false; }
@@ -2491,6 +2592,11 @@
     const trim = s => (s || "").trim();
     let msg = "Сохранено", go = null;
     switch (f.dataset.form) {
+      case "setupIdentity": {
+        if (!trim(v.group) || !trim(v.university)) return err("Укажите группу и учебное заведение");
+        DB.settings.group = trim(v.group); DB.settings.university = trim(v.university);
+        DB.settings.setup_step = 2; msg = "Группа сохранена"; break;
+      }
       case "welcome":
         return loadNntu(f, v.group, res => {
           DB = normalize({ settings: { group: res.group } });
@@ -2540,6 +2646,21 @@
         Object.assign(l, { subject: trim(v.subject).replace(/\s+/g, " "), day: +v.day, num: +v.num, week: v.week, kind: v.kind, room: trim(v.room), teacher: trim(v.teacher) });
         if (!id) { DB.lessons.push(l); msg = "Пара добавлена"; }
         ensureTeacher(l.teacher); break;
+      }
+      case "scheduleImport": {
+        const plan = schedulePlan(v.list || "");
+        if (plan.errors.length) return err(`${plan.errors[0]}${plan.errors.length > 1 ? ` Ошибок: ${plan.errors.length}.` : ""}`);
+        if (!plan.add.length && !plan.update.length) return err("Новых или изменённых пар нет");
+        const wasEmpty = !DB.lessons.length;
+        plan.add.forEach(l => { if (l.date) DB.oneoff.push({ id: "o" + newId(), ...l, src: "import" }); else DB.lessons.push({ id: newId(), ...l }); ensureTeacher(l.teacher); });
+        plan.update.forEach(({ old, val }) => { Object.assign(old, val); if (!val.start) { delete old.start; delete old.end; } ensureTeacher(val.teacher); });
+        const counts = subgroupCounts();
+        if (wasEmpty) {
+          const vals = Object.values(counts), common = [...new Set(vals)].sort((a, b) => vals.filter(v => v === b).length - vals.filter(v => v === a).length || b - a)[0];
+          if (common) DB.settings.subgroup_count = Math.max(2, common, ...DB.students.map(s => s.subgroup || 0));
+          Object.entries(counts).forEach(([base, n]) => { if (n !== common) { DB.settings.own_split = [...new Set([...(DB.settings.own_split || []), base])]; DB.settings.subgroup_subject_counts[base] = n; } });
+        } else Object.entries(counts).forEach(([base, n]) => { if (n > splitSize(base)) { DB.settings.own_split = [...new Set([...(DB.settings.own_split || []), base])]; DB.settings.subgroup_subject_counts[base] = n; } });
+        msg = `Расписание: новых ${plan.add.length}, обновлено ${plan.update.length}`; break;
       }
       case "work": {
         if (!trim(v.title)) return err("Укажите, что сдаём");
@@ -2592,10 +2713,12 @@
       case "contacts": {
         const pl = contactsPlan(f);
         if (!pl.rows.length) return err("Не нашли ни одного ФИО — нужен столбец с фамилией и именем");
+        if (pl.invalidSubgroups.length) return err(`Подгруппа должна быть от 1 до 9: ${pl.invalidSubgroups.slice(0, 3).join(", ")}`);
         if (pl.many.length) return err(`Уточните имя — в группе несколько похожих: ${pl.many.join(", ")}`);
         if (!pl.upd.length && !pl.fresh.length) return err("Нового нечего заполнить");
         pl.upd.forEach(({ s, val, ch }) => ch.forEach(k => { s[k] = val[k]; }));
-        pl.fresh.forEach(x => DB.students.push({ id: newId(), name: x.name, phone: x.phone, email: x.email, telegram: x.telegram, birthday: x.birthday, note: "", role: "" }));
+        pl.fresh.forEach(x => DB.students.push({ id: newId(), name: x.name, phone: x.phone, email: x.email, telegram: x.telegram, birthday: x.birthday, subgroup: x.subgroup, note: "", role: "" }));
+        DB.settings.subgroup_count = Math.max(DB.settings.subgroup_count, ...DB.students.map(s => s.subgroup || 0));
         msg = `Контакты заполнены: ${pl.upd.length}${pl.fresh.length ? ` · добавлено в группу: ${pl.fresh.length}` : ""}${pl.unknown.length ? ` · не нашли: ${pl.unknown.length}` : ""}`; break;
       }
       case "sick": {
@@ -2731,6 +2854,12 @@
   /* ---------- действия ---------- */
   const confirmed = el => el.dataset.confirmed === "1";
   const ACT = {
+    startWizard: () => { setDB({ settings: { setup_step: 1 } }); location.hash = "#setup"; render(); },
+    wizardRoster: () => openSheet(FORMS.contacts(true)),
+    setupNext: () => { DB.settings.setup_step = Math.min(4, (DB.settings.setup_step || 1) + 1); persist(); render(true); },
+    setupBack: () => { DB.settings.setup_step = Math.max(1, (DB.settings.setup_step || 1) - 1); persist(); render(true); },
+    setupLater: () => { DB.settings.setup_step = 0; persist(); location.hash = "#home"; render(); },
+    setupFinish: () => { DB.settings.setup_step = 0; persist(); location.hash = "#home"; render(); },
     accountLogout: async () => {
       try { await ACCOUNT_API.auth.logout(); if (SYNC) SYNC.stop(); SYNC = null; BOUND_GROUP = null; GROUPS = []; ACCOUNT = null; ACCOUNT_CHECKED = true;
         MAIL_STATE = { groupId: "", items: [], sources: [], loading: false, loaded: false, error: "" };
@@ -3000,6 +3129,14 @@
       });
       inp.click();
     },
+    tableFile: el => {
+      const f = el.closest("form"), inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.csv,.tsv,.txt";
+      inp.addEventListener("change", async () => { const file = inp.files[0]; if (!file) return;
+        if (file.size > 2 * 1024 * 1024) return toast("Файл слишком большой — максимум 2 МБ", "info");
+        try { f.list.value = /\.xlsx$/i.test(file.name) ? (await XLSX.readRows(file)).map(r => r.join("\t")).join("\n") : await file.text(); schedulePreview(f); }
+        catch (e) { toast("Не удалось прочитать таблицу", "info"); }
+      }); inp.click();
+    },
     sgMore: el => {
       const f = el.closest("form"), n = $$("textarea[name^='g']", f).length + 1;
       if (n > 9) return toast("Больше 9 подгрупп не бывает", "info");
@@ -3130,6 +3267,7 @@
   // предпросмотр списков по мере ввода; смена «для чего деление» перестраивает форму
   document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="many"], form[data-form="sgLists"]'); if (f) listPreview(f); });
   document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="contacts"]'); if (f) contactsPreview(f); });
+  document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="scheduleImport"]'); if (f) schedulePreview(f); });
   document.addEventListener("change", e => { const f = e.target.closest && e.target.closest('form[data-form="contacts"]'); if (f) contactsPreview(f); });
   document.addEventListener("change", e => {
     const f = e.target.closest && e.target.closest('form[data-form="sgLists"]'); if (!f) return;
