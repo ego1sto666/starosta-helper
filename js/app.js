@@ -1854,7 +1854,9 @@
         <div class="topbar__titles"><h1 class="topbar__title" title="${esc(scr.title)}">${esc(scr.title)}</h1>${scr.sub ? `<div class="topbar__sub">${esc(scr.sub)}</div>` : ""}</div>
         <div class="topbar__actions">${acts}</div>`;
     }
+    syncTopbar();
   }
+  function syncTopbar() { topbar.classList.toggle("is-stuck", window.scrollY > 6); }
   // #now — быстрое действие с иконки: отметка пары, которая идёт или будет следующей
   function nowRoute() {
     const ls = activeOnly(dayLessons(TODAY)), l = ls.find(x => lessonState(x, TODAY) === "live") || ls.find(x => lessonState(x, TODAY) === "future") || [...ls].reverse().find(x => !DB.attendance[attKey(TODAY, x.id)]);
@@ -2887,7 +2889,7 @@
     if (e.key === "Escape") { if (!sheet.hidden) closeSheet(); else if (current && current.back && !t.matches("input, textarea")) location.hash = current.back; }
   });
   window.addEventListener("hashchange", () => render());
-  window.addEventListener("scroll", () => topbar.classList.toggle("is-stuck", scrollY > 6), { passive: true });
+  window.addEventListener("scroll", syncTopbar, { passive: true });
 
   /* ---------- тема ---------- */
   const mq = matchMedia("(prefers-color-scheme: dark)");

@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>topbar</title>
+<iframe id="app" style="border:0;width:390px;height:800px"></iframe>
+<script>
+const report = [], errors = [];
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+function check(ok, label) { report.push((ok ? "OK " : "FAIL ") + label); if (!ok) errors.push(label); }
+async function run() {
+  const fixture = await (await fetch("/__t/fixtures/demo.json")).json();
+  for (const width of [390, 1100]) {
+    const frame = document.querySelector("#app");
+    frame.style.width = width + "px";
+    frame.src = "/index.html?topbar=" + width + "#home";
+    await new Promise(resolve => frame.onload = resolve);
+    const w = frame.contentWindow;
+    w.localStorage.setItem("starosta.data", JSON.stringify(fixture));
+    w.location.reload();
+    await new Promise(resolve => frame.onload = resolve);
+    const d = frame.contentDocument;
+    const bar = d.querySelector("#topbar");
+    for (let i = 0; i < 30 && !bar.classList.contains("topbar--home"); i++) await wait(100);
+    check(bar.classList.contains("topbar--home"), `${width}px: главная страница загружена`);
+    d.querySelector("#view").style.minHeight = "1800px";
+    const solid = () => getComputedStyle(bar).backgroundColor === getComputedStyle(d.body).backgroundColor;
+    check(solid(), `${width}px: шапка непрозрачна до прокрутки`);
+    w.scrollTo(0, 320);
+    await wait(100);
+    check(w.scrollY > 6 && bar.classList.contains("is-stuck"), `${width}px: шапка закреплена (scrollY=${w.scrollY})`);
+    check(solid(), `${width}px: содержимое не просвечивает под шапкой`);
+    bar.querySelector('[data-act="themeQuick"]').click();
+    await wait(100);
+    check(bar.classList.contains("is-stuck") && solid(), `${width}px: шапка остаётся плотной после смены темы`);
+    const title = bar.querySelector(".brand__text").getBoundingClientRect(), bounds = bar.getBoundingClientRect();
+    check(title.top >= bounds.top && title.bottom <= bounds.bottom, `${width}px: приветствие внутри шапки`);
+  }
+  report.push("ERRORS: " + (errors.length ? errors.join(" | ") : "нет"));
+}
+run().catch(e => report.push("FAIL " + e.message, "ERRORS: " + e.message))
+  .finally(() => fetch("/__save/result-topbar.txt", { method: "POST", body: report.join("\n") }));
+</script>
