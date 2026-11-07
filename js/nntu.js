@@ -33,7 +33,7 @@ window.NNTU = (() => {
     if (m) return `${m[1]}, корп. ${m[2]}`;
     return s;
   }
-  // «Седаев Павел Валерьевич» → «Седаев П. В.»
+  // Полное ФИО преподавателя из API сокращаем до фамилии и инициалов.
   const teacher = s => String(s || "").split(/\s*[,;]\s*/).filter(Boolean).map(p => {
     const w = p.trim().split(/\s+/);
     return w.length === 3 && w.every(x => /^[А-ЯЁ][а-яё-]+$/.test(x)) ? `${w[0]} ${w[1][0]}. ${w[2][0]}.` : p.trim();

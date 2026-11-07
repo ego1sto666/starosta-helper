@@ -26,6 +26,12 @@ async function run() {
   $('[data-act="demo"]').click();
   await until(() => data() && data().settings.demo, 5000, "demo loaded"); await sleep(400);
   const d = data(), recs = Object.values(d.attendance), marks = recs.flatMap(r => Object.values(r.marks));
+  const fixture = await (await fetch("/__t/fixtures/demo.json")).json();
+  const namesAreFictional = d.students.every(s => fixture.students.some(f => f.name === s.name))
+    && d.teachers.every(t => /^Преподаватель \d+$/.test(t.name))
+    && d.lessons.every(l => !l.teacher || /^Преподаватель \d+$/.test(l.teacher));
+  if (!namesAreFictional) throw new Error("В публичном примере обнаружены имена вне вымышленного набора");
+  log("1 fictional names:", namesAreFictional);
   const cnt = v => marks.filter(m => m === v).length;
   log("1 students:", d.students.length, "| lessons:", d.lessons.length, "| records:", recs.length, "| hash:", W().location.hash);
   log("1 marks + / н / у:", cnt("+"), cnt("н"), cnt("у"), "| all marked:", marks.length > 0 && marks.every(m => "+ну".includes(m)));

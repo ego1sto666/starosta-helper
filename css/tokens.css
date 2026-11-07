@@ -42,7 +42,6 @@
   --excused-soft: #EEEAFE;  /* подложка строки «У» (единый сиреневый цвет уважительной причины) */
 
   /* --- только веб: полупрозрачные подложки под blur */
-  --header-bg: rgba(241, 244, 242, 0.86);  /* липкая шапка при прокрутке: плотная, чтобы крупный текст под ней не просвечивал */
   --nav-bg: rgba(255, 255, 255, 0.78);     /* нижнее меню и боковая панель */
   --glass: saturate(180%) blur(24px);      /* «стекло» под полупрозрачными панелями */
   --scrim: rgba(10, 24, 19, 0.36);         /* затемнение под диалогом */
@@ -131,7 +130,7 @@
   --shadow-card: 0 1px 2px rgba(38, 41, 102, 0.04), 0 6px 20px -6px rgba(38, 41, 102, 0.12);
   --shadow-hover: 0 2px 4px rgba(38, 41, 102, 0.05), 0 14px 32px -10px rgba(38, 41, 102, 0.2);
   --excused-ink: #92400E; --excused-soft: #FEF3C7;
-  --header-bg: rgba(244, 245, 251, 0.92); --nav-bg: rgba(255, 255, 255, 0.88);
+  --nav-bg: rgba(255, 255, 255, 0.88);
   --fs-title: 27px;         /* в этой теме заголовок крупный, Black, слева */
   --rail-bg: #FFFFFF; --rail-bg-2: #F3F1FE;  /* фиолетовая: светлая панель с фиолетовым свечением */
   --theme-color: #5B4CF0;
@@ -150,7 +149,7 @@
   --bad: #FF7A6E; --bad-soft: #3A1E1C; --bad-ink: #FF9A90;
   --warn: #F5B340; --warn-soft: #382A12; --warn-ink: #F8C76A;
   --excused-ink: #BFB4FF; --excused-soft: #262146;
-  --header-bg: rgba(10, 15, 13, 0.86); --nav-bg: rgba(24, 32, 29, 0.78); --scrim: rgba(0, 0, 0, 0.6);
+  --nav-bg: rgba(24, 32, 29, 0.78); --scrim: rgba(0, 0, 0, 0.6);
   --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.5);
   --theme-color: #0A0F0D;
     --rail-bg: #111916; --rail-bg-2: #15201C; --rail-fg: #EDF3F0; --rail-muted: #8FA39B; --rail-line: rgba(255, 255, 255, 0.07);
@@ -172,7 +171,7 @@
     --bad: #FF7A6E; --bad-soft: #3A1E1C; --bad-ink: #FF9A90;
     --warn: #F5B340; --warn-soft: #382A12; --warn-ink: #F8C76A;
     --excused-ink: #BFB4FF; --excused-soft: #262146;
-    --header-bg: rgba(10, 15, 13, 0.86); --nav-bg: rgba(24, 32, 29, 0.78); --scrim: rgba(0, 0, 0, 0.6);
+    --nav-bg: rgba(24, 32, 29, 0.78); --scrim: rgba(0, 0, 0, 0.6);
     --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.5);
     --theme-color: #0A0F0D;
     --rail-bg: #111916; --rail-bg-2: #15201C; --rail-fg: #EDF3F0; --rail-muted: #8FA39B; --rail-line: rgba(255, 255, 255, 0.07);
