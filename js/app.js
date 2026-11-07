@@ -114,6 +114,21 @@
       delete d.settings.semesters;
     }
     d.lessons.forEach(l => { delete l.sem; });
+    // Старые данные выводили деление из названий пар. Один раз сохраняем его явно,
+    // чтобы дальнейшее редактирование расписания не меняло подгруппы студентов.
+    if (!Number.isInteger(d.settings.subgroup_count)) {
+      const counts = {};
+      d.lessons.forEach(l => { const m = /\s*\(\s*подгруппа\s*(\d+)\s*\)\s*/i.exec(l.subject || ""); if (m) {
+        const base = l.subject.replace(m[0], " ").trim(); counts[base] = Math.max(counts[base] || 0, +m[1]);
+      } });
+      const vals = Object.values(counts), common = [...new Set(vals)].sort((a, b) => vals.filter(v => v === b).length - vals.filter(v => v === a).length || b - a)[0] || 2;
+      d.settings.subgroup_count = Math.max(2, common, ...d.students.map(s => s.subgroup || 0));
+      const own = new Set(d.settings.own_split || []);
+      Object.entries(counts).forEach(([base, n]) => { if (n !== common) own.add(base); });
+      d.settings.own_split = [...own];
+      d.settings.subgroup_subject_counts = Object.fromEntries([...own].map(base => [base, Math.max(2, counts[base] || common, ...d.students.map(s => (s.subgroups || {})[base] || 0))]));
+    }
+    d.settings.subgroup_subject_counts ??= {};
     return d;
   }
 
@@ -200,18 +215,16 @@
   const SUBGROUP_RE = /\s*\(\s*подгруппа\s*(\d+)\s*\)\s*/i;
   const baseSubject = n => (n || "—").replace(SUBGROUP_RE, " ").trim() || "—";
   const subgroupOf = n => { const m = SUBGROUP_RE.exec(n || ""); return m ? +m[1] : null; };
+  const splitSubjectName = raw => {
+    const name = baseSubject((raw || "").trim());
+    return [...new Set([...DB.lessons.map(l => baseSubject(l.subject)), ...DB.oneoff.map(l => baseSubject(l.subject)), ...ownSplit()])].find(x => nameKey(x) === nameKey(name)) || name;
+  };
   function subgroupCounts() { const out = {}; DB.lessons.forEach(l => { const n = subgroupOf(l.subject); if (n) { const b = baseSubject(l.subject); out[b] = Math.max(out[b] || 0, n); } }); return out; }
-  function mainCount(counts) {
-    const vals = Object.values(counts); if (!vals.length) return 0;
-    return [...new Set(vals)].sort((a, b) => (vals.filter(v => v === b).length - vals.filter(v => v === a).length) || b - a)[0];
-  }
   function ownSplit() {
-    const c = subgroupCounts(), main = mainCount(c), manual = new Set(DB.settings.own_split || []);
-    return Object.keys(c).filter(b => c[b] !== main || manual.has(b)).sort((a, b) => nameKey(a).localeCompare(nameKey(b), "ru"));
+    return [...new Set(DB.settings.own_split || [])].sort((a, b) => nameKey(a).localeCompare(nameKey(b), "ru"));
   }
   function splitSize(base) {
-    if (!base) return Math.max(mainCount(subgroupCounts()) || 2, ...DB.students.map(s => s.subgroup || 0));
-    return Math.max(subgroupCounts()[base] || 2, ...DB.students.map(s => (s.subgroups || {})[base] || 0));
+    return base && ownSplit().includes(base) ? (DB.settings.subgroup_subject_counts[base] || DB.settings.subgroup_count) : DB.settings.subgroup_count;
   }
   function studentSubgroup(st, base, own = ownSplit()) { return base && own.includes(base) ? ((st.subgroups || {})[base] || 0) : (st.subgroup || 0); }
   function setStudentSubgroup(st, n, base) {
@@ -906,14 +919,12 @@
 
   /* ----- Подгруппы ----- */
   SCREENS.subgroups = (base) => {
-    const own = ownSplit(), counts = subgroupCounts();
-    if (base !== undefined) S.sgTab = base;
+    const own = ownSplit();
+    S.sgTab = base || "";
     if (S.sgTab && !own.includes(S.sgTab)) S.sgTab = "";
     const b = S.sgTab || null, N = splitSize(b), list = students();
     const num = s => studentSubgroup(s, b, own);
     const cnt = Array.from({ length: N }, (_, i) => list.filter(s => num(s) === i + 1).length), none = list.filter(s => !num(s)).length;
-    const manual = new Set(DB.settings.own_split || []), mainN = mainCount(counts);
-    const canOwn = Object.keys(counts).filter(x => !own.includes(x));
     const chip = s => { const n = num(s); return `<button class="sgchip${n ? "" : " sgchip--none"}" style="--c:${n ? sgColor(n) : "var(--muted)"}" data-act="sgCycle" data-id="${esc(s.id)}" aria-label="${esc(s.name)}: ${n ? n + "-я подгруппа" : "без подгруппы"}. Нажмите, чтобы сменить">${n || "—"}</button>`; };
     const row = s => { const n = num(s); return `<div class="card person${n ? " person--sg" : ""}" style="--accent:${n ? sgColor(n) : "transparent"}" draggable="true" data-drag="${esc(s.id)}">${avatar(s)}<div class="person__body"><div class="person__name">${esc(s.name)}</div></div>${chip(s)}</div>`; };
     const boards = [...Array.from({ length: N }, (_, i) => i + 1), 0].map(n => {
@@ -922,7 +933,7 @@
         <div class="board__head"><b>${n ? `${n}-я подгруппа` : "Без подгруппы"}</b><span class="pill num" style="background:var(--card)">${ls.length}</span></div>
         ${ls.map(row).join("") || `<p class="hint" style="padding:18px 6px">${n ? "Перетащите сюда студентов" : "Все распределены"}</p>`}</section>`;
     }).join("");
-    const usedBy = b ? `Своё деление: ${N} ${plural(N, ["подгруппа", "подгруппы", "подгрупп"])}${counts[b] !== mainN ? " — по расписанию" : ""}.`
+    const usedBy = b ? `Своё деление: ${N} ${plural(N, ["подгруппа", "подгруппы", "подгрупп"])}.`
       : own.length ? `Для всех предметов, кроме: <b>${own.map(esc).join(", ")}</b>.` : "Для всех предметов с подгруппами.";
     return {
       title: "Подгруппы", sub: b || "Основное деление", back: "#group", nav: "group",
@@ -932,8 +943,9 @@
           <p style="font-size:14px">${usedBy}</p>
           <div class="counts">${cnt.map((c, i) => `<span class="pill num" style="background:color-mix(in srgb, ${sgColor(i + 1)} 15%, var(--card));color:color-mix(in srgb, ${sgColor(i + 1)} 60%, var(--text))">${i + 1}-я: ${c}</span>`).join("")}<span class="pill ${none ? "pill--warn" : ""} num" style="${none ? "" : "background:var(--field);color:var(--muted-ink)"}">без подгруппы: ${none}</span></div>
           <div class="btn-row"><button class="btn btn--primary" data-act="form" data-f="sgLists">${ic("add_many")}Задать списками</button><button class="btn btn--soft" data-act="sgEven">${ic("subgroups")}Поровну по списку</button>
-          ${b ? (manual.has(b) && counts[b] === mainN ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Делить как основные</button>` : "")
-              : canOwn.length ? `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Своё деление для предмета</button>` : ""}</div>
+          <button class="btn btn--neutral" data-act="form" data-f="sgCount">${ic("edit")}Количество подгрупп</button>
+          ${b ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Использовать основное деление</button>`
+              : `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Добавить деление для предмета</button>`}</div>
         </section>
         ${list.length ? `<p class="hint only-narrow">Нажмите на номер, чтобы сменить подгруппу: 1 → … → ${N} → —</p>
         <p class="hint only-wide" style="text-align:left">Перетащите студента в нужную колонку или нажмите на номер.</p>
@@ -2322,7 +2334,7 @@
       ${field("Фамилия и имя", `<input name="name" required value="${esc(s?.name || "")}" placeholder="Иванов Иван">`)}
       <div class="grid grid--cols2" style="gap:0 12px">
         ${field("Роль в группе", select("role", [["", "Студент"], ["head", "Староста"], ["deputy", "Зам. старосты"]], s?.role || ""))}
-        ${field("Подгруппа", select("subgroup", [[0, "Не указана"], ...Array.from({ length: Math.max(n, 3) }, (_, i) => [i + 1, `${i + 1}-я подгруппа`])], s?.subgroup || 0))}
+        ${field("Подгруппа", select("subgroup", [[0, "Не указана"], ...Array.from({ length: n }, (_, i) => [i + 1, `${i + 1}-я подгруппа`])], s?.subgroup || 0))}
         ${field("Телефон", `<input name="phone" type="tel" value="${esc(s?.phone || "")}" placeholder="+7 900 000-00-00">`)}
         ${field("День рождения", `<input name="birthday" inputmode="decimal" autocomplete="off" value="${esc(s?.birthday || "")}" placeholder="05.11 или 05.11.2007">`)}
         ${field("Почта", `<input name="email" type="email" value="${esc(s?.email || "")}" placeholder="ivanov@mail.ru">`)}
@@ -2349,8 +2361,8 @@
       <div class="list-preview" id="listPreview" aria-live="polite"></div>
       ${formErr}<div class="btn-row"><button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Добавить</button></div></form>`,
     // подгруппы отдельными списками: основное деление или своё для предмета
-    sgLists: (base = S.sgTab || "", extraN = 0) => { const counts = subgroupCounts(), opts = [["", "Основное деление (все предметы)"], ...Object.keys(counts).sort((a, b) => a.localeCompare(b, "ru")).map(x => [x, `${x} · ${counts[x]} ${plural(counts[x], ["подгруппа", "подгруппы", "подгрупп"])}`])];
-      const N = Math.max(splitSize(base || null), 2) + extraN, own = ownSplit();
+    sgLists: (base = S.sgTab || "", extraN = 0) => { const opts = [["", "Основное деление (все предметы)"], ...[...new Set([...Object.keys(subgroupCounts()), ...ownSplit()])].sort((a, b) => a.localeCompare(b, "ru")).map(x => [x, x])];
+      const N = splitSize(base || null) + extraN, own = ownSplit();
       const cur = n => students().filter(s => studentSubgroup(s, base || null, own) === n).map(s => s.name).join("\n");
       return `${sheetHead("subgroups", "var(--primary)", "Подгруппы списками")}<form data-form="sgLists" data-n="${N}">
       ${field("Для чего деление", select("base", opts, base))}
@@ -2373,10 +2385,16 @@
     going: (id) => { const e = DB.events.find(x => x.id === id), g = new Set(e.going || []);
       return `${sheetHead("going", "var(--primary)", "Кто идёт")}<p class="muted" style="margin:-6px 0 12px;font-size:14px">${esc(e.title)}</p>
       <div class="stack" style="gap:6px">${students().map(s => toggleRow("goingToggle", `data-e="${esc(e.id)}" data-id="${esc(s.id)}"`, s, g.has(s.id))).join("")}</div>${doneBtn}`; },
-    ownSplit: () => { const c = subgroupCounts(), own = ownSplit();
+    sgCount: () => { const base = S.sgTab || "", count = splitSize(base || null);
+      return `${sheetHead("subgroups", "var(--primary)", base ? `Подгруппы: ${esc(base)}` : "Основные подгруппы")}<form data-form="sgCount">
+      <input type="hidden" name="base" value="${esc(base)}">
+      ${field("Количество подгрупп", `<input name="count" type="number" min="2" max="9" step="1" required value="${count}" inputmode="numeric">`)}
+      <p class="hint" style="text-align:left;margin:-4px 0 12px">От 2 до 9. Если уменьшаете количество, сначала переведите студентов из лишних подгрупп. Расписание и старые отметки не удалятся.</p>${formBtns()}</form>`; },
+    ownSplit: () => { const choices = [...new Set([...DB.lessons.map(l => baseSubject(l.subject)), ...DB.oneoff.map(l => baseSubject(l.subject)), ...DB.works.map(w => baseSubject(w.subject)), ...DB.exams.map(x => baseSubject(x.subject))])].filter(x => x && x !== "—" && !ownSplit().includes(x)).sort((a, b) => a.localeCompare(b, "ru"));
       return `${sheetHead("subgroups", "var(--primary)", "Своё деление для предмета")}<form data-form="ownSplit">
-      ${field("Предмет", select("base", Object.keys(c).filter(x => !own.includes(x)).sort((a, b) => a.localeCompare(b, "ru")).map(x => [x, `${x} · ${c[x]} ${plural(c[x], ["подгруппа", "подгруппы", "подгрупп"])}`]), ""))}
-      <p class="hint" style="text-align:left;margin:-4px 0 12px">У предмета будет своё распределение студентов, отдельно от основного.</p>${formBtns()}</form>`; },
+      ${field("Предмет", `<input name="base" required list="splitSubjects" placeholder="Например, Информатика"><datalist id="splitSubjects">${choices.map(x => `<option value="${esc(x)}">`).join("")}</datalist>`)}
+      ${field("Количество подгрупп", `<input name="count" type="number" min="2" max="9" step="1" required value="${DB.settings.subgroup_count}" inputmode="numeric">`)}
+      <p class="hint" style="text-align:left;margin:-4px 0 12px">Можно указать любой предмет, даже если его ещё нет в расписании. Распределение студентов для него будет отдельным.</p>${formBtns()}</form>`; },
     groupName: () => `${sheetHead("school", "var(--primary)", "Группа")}<form data-form="groupName">${field("Название группы", `<input name="group" value="${esc(DB.settings.group || "")}" placeholder="ИВТ 2-1">`)}${formBtns()}</form>`,
     confirm: (text, act, id, btn = "Удалить") => `${sheetHead("delete", "var(--bad)", text)}<p style="margin-bottom:16px">Это нельзя отменить.</p>
       <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--danger" data-act="${act}" data-id="${esc(id || "")}" data-confirmed="1">${ic("delete")}${btn}</button></div>`,
@@ -2671,6 +2689,8 @@
         if (r.error) return err(r.error);
         const base = v.base || null;
         if (base && !ownSplit().includes(base)) DB.settings.own_split = [...new Set([...(DB.settings.own_split || []), base])];
+        if (base) DB.settings.subgroup_subject_counts[base] = r.lists.length;
+        else DB.settings.subgroup_count = r.lists.length;
         r.missing.forEach(({ name, n }) => { const s = { id: newId(), name, phone: "", birthday: "", note: "", role: "" }; DB.students.push(s); r.map.set(s.id, n); });
         DB.students.forEach(s => setStudentSubgroup(s, r.map.get(s.id) || 0, base));
         S.sgTab = base || "";
@@ -2685,8 +2705,21 @@
         if (!id) { DB.teachers.push(t); msg = "Преподаватель добавлен"; } break;
       }
       case "ownSplit": {
-        if (!v.base) return err("Выберите предмет");
-        DB.settings.own_split = [...new Set([...(DB.settings.own_split || []), v.base])]; S.sgTab = v.base; break;
+        const base = splitSubjectName(v.base), count = +v.count;
+        if (!base || base === "—") return err("Укажите предмет");
+        if (ownSplit().some(x => nameKey(x) === nameKey(base))) return err("Для этого предмета уже есть отдельное деление");
+        if (!Number.isInteger(count) || count < 2 || count > 9) return err("Укажите от 2 до 9 подгрупп");
+        DB.settings.own_split = [...new Set([...(DB.settings.own_split || []), base])];
+        DB.settings.subgroup_subject_counts[base] = count; S.sgTab = base; go = `#subgroups/${encodeURIComponent(base)}`; break;
+      }
+      case "sgCount": {
+        const base = v.base || null, count = +v.count;
+        if (!Number.isInteger(count) || count < 2 || count > 9) return err("Укажите от 2 до 9 подгрупп");
+        const affected = DB.students.filter(s => (base ? (s.subgroups || {})[base] : s.subgroup) > count);
+        if (affected.length) return err(`Сначала переведите из подгрупп выше ${count}: ${affected.slice(0, 3).map(s => s.name).join(", ")}${affected.length > 3 ? ` и ещё ${affected.length - 3}` : ""}`);
+        if (base) DB.settings.subgroup_subject_counts[base] = count;
+        else DB.settings.subgroup_count = count;
+        msg = `Теперь ${count} ${plural(count, ["подгруппа", "подгруппы", "подгрупп"])}`; break;
       }
       case "groupName": DB.settings.group = trim(v.group); break;
     }
@@ -2771,8 +2804,8 @@
       copy(text, "Список скопирован");
     },
     copyText: el => copy(el.dataset.t, "Скопировано"),
-    sgTab: el => { S.sgTab = el.dataset.t; render(true); },
-    sgUnown: el => { DB.settings.own_split = (DB.settings.own_split || []).filter(x => x !== el.dataset.t); S.sgTab = ""; persist(); render(true); },
+    sgTab: el => { const hash = `#subgroups${el.dataset.t ? "/" + encodeURIComponent(el.dataset.t) : ""}`; if (location.hash === hash) render(true); else location.hash = hash; },
+    sgUnown: el => { DB.settings.own_split = (DB.settings.own_split || []).filter(x => x !== el.dataset.t); S.sgTab = ""; persist(); if (location.hash === "#subgroups") render(true); else location.hash = "#subgroups"; },
     sgCycle: (el, e) => {
       e.stopPropagation();
       const b = S.sgTab || null, N = splitSize(b), s = DB.students.find(x => x.id === el.dataset.id), n = studentSubgroup(s, b);

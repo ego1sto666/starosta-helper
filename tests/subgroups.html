@@ -1,0 +1,44 @@
+<!doctype html><meta charset="utf-8"><title>subgroups</title>
+<iframe id="app" style="width:390px;height:850px;border:0"></iframe>
+<script>
+const out = [], errors = [], wait = ms => new Promise(r => setTimeout(r, ms));
+const frame = document.getElementById("app"), win = () => frame.contentWindow, doc = () => frame.contentDocument;
+const one = s => doc().querySelector(s);
+const data = () => JSON.parse(win().localStorage.getItem("starosta.data"));
+function check(ok, label) { if (!ok) errors.push(label); out.push(`${ok ? "OK" : "FAIL"}: ${label}`); }
+async function until(fn) { for (let i = 0; i < 80; i++) { const x = fn(); if (x) return x; await wait(100); } throw Error("timeout"); }
+async function load() { frame.src = "/index.html?r=" + Math.random() + "#subgroups"; await new Promise(r => frame.onload = r); await until(() => one('[data-f="sgLists"]')); }
+async function form(name) { one(`[data-f="${name}"]`).click(); return until(() => one(`form[data-form="${name}"]`)); }
+async function save(f) { f.requestSubmit(); await wait(200); }
+async function run() {
+  localStorage.clear();
+  const d = await (await fetch("/__t/fixtures/demo.json")).json();
+  d.settings.nntu_checked = new Date().toISOString().slice(0, 10);
+  frame.src = "/index.html"; await new Promise(r => frame.onload = r);
+  win().localStorage.setItem("starosta.data", JSON.stringify(d)); await load();
+  let x = data();
+  check(!!one('[data-act="sgTab"][data-t="История России"]'), "старое деление отображается после переноса");
+  let f = await form("sgCount"); f.count.value = "4"; await save(f);
+  check(data().settings.subgroup_count === 4 && data().settings.own_split.includes("История России"), "основное деление изменено на 4, старое сохранено");
+  win().location.hash = "#group"; await until(() => doc().getElementById("fab").dataset.kind === "student");
+  doc().getElementById("fab").click(); f = await until(() => one('form[data-form="student"]'));
+  check(f.subgroup.options.length === 5, "карточка студента показывает 4 подгруппы");
+  one('#sheet [data-act="closeSheet"]').click(); win().location.hash = "#subgroups"; await until(() => one('[data-f="sgLists"]'));
+  f = await form("ownSplit"); f.base.value = "Экономика"; f.count.value = "3"; await save(f);
+  x = data(); check(x.settings.own_split.includes("Экономика") && x.settings.subgroup_subject_counts["Экономика"] === 3, "новый предмет без расписания получил 3 подгруппы");
+  check(one('[data-act="sgCycle"]') !== null, "студентов можно распределять по новому предмету");
+  f = await form("sgCount"); f.count.value = "2"; await save(f);
+  check(data().settings.subgroup_subject_counts["Экономика"] === 2, "число подгрупп предмета изменено на 2");
+  one('[data-act="sgTab"][data-t=""]').click(); await wait(200);
+  await until(() => win().location.hash === "#subgroups" && one('[data-act="sgTab"][data-t=""]')?.getAttribute("aria-selected") === "true");
+  const sid = one('.sg-list [data-act="sgCycle"]').dataset.id;
+  for (let i = 0; i < 5 && (data().students.find(s => s.id === sid).subgroup || 0) < 4; i++) {
+    one(`.sg-list [data-act="sgCycle"][data-id="${sid}"]`).click(); await wait(100);
+  }
+  check(data().students.find(s => s.id === sid).subgroup === 4, "студента можно перевести в 4-ю подгруппу");
+  f = await form("sgCount"); f.count.value = "2"; await save(f);
+  check(data().settings.subgroup_count === 4 && !one(".form-err").hidden, "уменьшение не теряет студентов 3–4-й подгруппы");
+  out.push("ERRORS: " + (errors.join(" | ") || "нет"));
+}
+run().catch(e => out.push("FAIL: " + e.message, "ERRORS: " + e.message)).finally(() => fetch("/__save/result-subgroups.txt", { method: "POST", body: out.join("\n") }));
+</script>

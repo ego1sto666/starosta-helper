@@ -549,7 +549,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- подгруппы ---------- */
 .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
-.sgchip { min-width: 52px; height: 36px; padding: 0 12px; border-radius: 18px; font-weight: var(--fw-black); font-size: 15px; flex: none;
+.sgchip { min-width: 52px; height: 44px; padding: 0 12px; border-radius: 18px; font-weight: var(--fw-black); font-size: 15px; flex: none;
   background: color-mix(in srgb, var(--c) 16%, var(--card)); color: color-mix(in srgb, var(--c) 60%, var(--text)); }
 .sgchip--none { --c: var(--muted); }
 .boards { display: none; }
@@ -765,7 +765,7 @@ a { color: inherit; text-decoration: none; }
   .tile { min-height: 120px; padding: 18px; }
   .markbar { display: none; }
   .mark-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .boards { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)) minmax(240px, 1fr); gap: 12px; align-items: start; }
+  .boards { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(210px, 1fr)) minmax(210px, 1fr); gap: 12px; align-items: start; overflow-x: auto; }
   .sg-list { display: none; }
   .trend__plot { height: 190px; }
 }
