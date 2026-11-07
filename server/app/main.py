@@ -1,4 +1,4 @@
-"""API «Помощника старосты». Черновик: к приложению пока не подключён (см. server/README.md).
+"""API «Помощника старосты». Локально подключён через js/config.js (см. server/README.md).
 
 Локальный запуск (из папки server):
     python -m venv .venv && .venv\\Scripts\\activate

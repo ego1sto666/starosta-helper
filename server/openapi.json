@@ -157,7 +157,7 @@
      "Аккаунт"
     ],
     "summary": "Forgot",
-    "description": "Письмо со ссылкой сброса. Ответ всегда одинаковый — не выдаём, есть ли такая почта.",
+    "description": "До настройки исходящей почты восстановление закрыто: секретные ссылки не пишем в журналы.",
     "operationId": "forgot_auth_password_forgot_post",
     "requestBody": {
      "content": {
@@ -1050,6 +1050,12 @@
       "maxLength": 60,
       "minLength": 1,
       "title": "Title"
+     },
+     "university": {
+      "type": "string",
+      "maxLength": 120,
+      "title": "University",
+      "default": ""
      },
      "nntu_group": {
       "type": "string",

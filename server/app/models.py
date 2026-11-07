@@ -63,7 +63,7 @@ class Group(Base):
     __tablename__ = "groups"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     title: Mapped[str] = mapped_column(String(60))                  # «26-ИВТ-2-1»
-    university: Mapped[str] = mapped_column(String(60), default="НГТУ им. Р. Е. Алексеева")
+    university: Mapped[str] = mapped_column(String(120), default="Не указан")
     nntu_group: Mapped[str] = mapped_column(String(60), default="")  # как группа называется в расписании НГТУ
     mail_code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -611,6 +611,25 @@ a { color: inherit; text-decoration: none; }
 .account__person b { font-size: 20px; }
 .account__person span { color: var(--muted-ink); font-size: 14px; }
 .account__foot { text-align: center; padding: 16px 12px 0; }
+.account__groups { display: grid; gap: 8px; margin: 16px 0 22px; }
+.account__groups h2, .account__form h2 { font-size: 16px; line-height: 1.3; }
+.account__group { display: grid; gap: 3px; width: 100%; min-height: 58px; padding: 10px 14px; text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--text); cursor: pointer; }
+.account__group small { color: var(--muted-ink); }
+.account__group:hover { border-color: var(--primary-ink); }
+.account__group:focus-visible, .mail-source button:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+.mail-connect { display: grid; gap: 14px; margin-bottom: 18px; min-width: 0; }
+.mail-connect p { line-height: 1.5; }
+.mail-connect__address { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.mail-connect__address code { max-width: 100%; overflow-wrap: anywhere; font-size: 14px; }
+.mail-source { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.mail-source div { display: grid; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
+.mail-source small { color: var(--muted-ink); }
+.mail-card { display: grid; gap: 12px; min-width: 0; }
+.mail-card__head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; color: var(--muted-ink); font-size: 13px; overflow-wrap: anywhere; }
+.mail-card__head span { display: flex; gap: 6px; align-items: center; }
+.mail-card h3 { font-size: 17px; overflow-wrap: anywhere; }
+.mail-card__suggest { color: var(--primary-ink); font-size: 13px; }
+.mail-card__text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow-y: auto; line-height: 1.5; }
 
 /* ---------- пустое состояние, скелетоны ---------- */
 .empty { text-align: center; padding: 34px 20px; display: grid; justify-items: center; gap: 10px; }

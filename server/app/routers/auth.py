@@ -1,11 +1,11 @@
-"""Аккаунты: регистрация, вход по логину (или почте) и паролю, выход, восстановление пароля.
+"""Аккаунты: регистрация, вход по логину (или почте) и паролю, выход.
 
-Вход хранится в cookie (httpOnly — недоступна скриптам страницы, SameSite=Lax), а не в localStorage:
-так токен не украсть через XSS. Подробности и решения — server/design/auth.md.
+Сброс пароля будет включён после настройки исходящей почты.
+Вход хранится в cookie (httpOnly — недоступна скриптам страницы, SameSite=Lax).
+Подробности и решения — server/design/auth.md.
 """
 from __future__ import annotations
 
-import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -22,7 +22,6 @@ from ..models import AuditLog, AuthSession, Membership, PasswordReset, User
 from ..security import hash_password, login_error, new_token, normalize_login, password_error, token_hash, verify_password
 
 router = APIRouter(prefix="/auth", tags=["Аккаунт"])
-log = logging.getLogger("starosta.auth")
 
 # защита от подбора пароля: не больше 10 попыток за 15 минут на логин и на IP (на сервере — в Redis)
 _tries: dict[str, list[float]] = defaultdict(list)
@@ -124,15 +123,8 @@ class ForgotIn(BaseModel):
 
 @router.post("/password/forgot", status_code=202)
 def forgot(body: ForgotIn, db: Session = Depends(get_db)):
-    """Письмо со ссылкой сброса. Ответ всегда одинаковый — не выдаём, есть ли такая почта."""
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
-    if user and not _limited("forgot:" + user.id, 3, 3600):
-        raw, h = new_token()
-        db.add(PasswordReset(user_id=user.id, token_hash=h, expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
-        db.commit()
-        # TODO (шаг 3 в ROADMAP.md): отправить письмо через SMTP-сервис в РФ. Пока — в журнал сервера.
-        log.info("Ссылка сброса пароля для %s: %s/#reset/%s", user.login, settings.app_origin, raw)
-    return {"ok": True}
+    """До настройки исходящей почты восстановление закрыто: секретные ссылки не пишем в журналы."""
+    raise HTTPException(503, "Восстановление пароля пока не настроено")
 
 
 class ResetIn(BaseModel):

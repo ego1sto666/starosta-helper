@@ -21,9 +21,9 @@ async function run() {
   html = html.replace('<head>', '<head><base href="/">');
   const code = `window.STAROSTA_PRIVACY_URL='/privacy'; window.StarostaAPI={enabled:()=>true,auth:{
     me:()=>Promise.reject({status:401}),
-    register:v=>{parent.calls.push(['register',v]);return Promise.resolve({login:v.login,email:v.email,name:v.name})},
-    login:(login,password)=>{parent.calls.push(['login',login,password]);return Promise.resolve({login,email:'a@example.ru',name:'Староста'})},
-    logout:()=>{parent.calls.push(['logout']);return Promise.resolve()}}};`;
+    register:v=>{parent.calls.push(['register',v]);return Promise.resolve({id:'u1',login:v.login,email:v.email,name:v.name})},
+    login:(login,password)=>{parent.calls.push(['login',login,password]);return Promise.resolve({id:'u1',login,email:'a@example.ru',name:'Староста'})},
+    logout:()=>{parent.calls.push(['logout']);return Promise.resolve()}},groups:{list:()=>Promise.resolve([])}};`;
   const close = '</scr' + 'ipt>';
   html = html.replace('<script src="js/app.js">' + close, '<scr' + 'ipt>' + code + close + '<script src="js/app.js">' + close);
   frame.srcdoc = html;

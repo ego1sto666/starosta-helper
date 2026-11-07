@@ -48,10 +48,12 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(c.get("/auth/me").status_code, 401)
         self.assertEqual(c.post("/auth/login", headers=H, json={"login": "starosta1", "password": "неверный"}).status_code, 401)
         self.assertEqual(c.post("/auth/login", headers=H, json={"login": "s1@example.ru", "password": "Parol2026"}).status_code, 200)
+        self.assertEqual(c.post("/auth/password/forgot", headers=H, json={"email": "s1@example.ru"}).status_code, 503)
 
         # группа с данными с устройства
         data = {"settings": {"group": "26-ИВТ-2-1"}, "students": [], "teachers": [{"id": "t1", "name": "Смирнов А. В.", "subjects": "Программирование", "email": "smirnov@nntu.ru"}]}
-        g = c.post("/groups", headers=H, json={"title": "26-ИВТ-2-1", "data": data}).json()
+        g = c.post("/groups", headers=H, json={"title": "26-ИВТ-2-1", "university": "Другой вуз", "data": data}).json()
+        self.assertEqual(g["university"], "Другой вуз")
         self.assertTrue(g["mail_address"].startswith("26-ivt-2-1-") and g["mail_address"].endswith("@in.test"))
         gid = g["id"]
         got = c.get(f"/groups/{gid}/data").json()
@@ -61,6 +63,19 @@ class ApiTest(unittest.TestCase):
         conflict = c.put(f"/groups/{gid}/data", headers=H, json={"rev": 1, "data": data})
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["detail"]["rev"], 2)
+
+        # Неверный пароль приложения не сохраняется; подключённый ящик виден только группе.
+        from unittest.mock import MagicMock, patch
+
+        imap_body = {"provider": "yandex", "login": "chief@example.ru", "password": "app-secret"}
+        with patch("app.routers.mail.connect", side_effect=OSError("auth failed")):
+            self.assertEqual(c.post(f"/groups/{gid}/mail/sources", headers=H, json=imap_body).status_code, 422)
+        self.assertEqual(len(c.get(f"/groups/{gid}/mail/sources").json()), 1)
+        with patch("app.routers.mail.connect", return_value=MagicMock()):
+            self.assertEqual(c.post(f"/groups/{gid}/mail/sources", headers=H, json=imap_body).status_code, 201)
+        src = c.get(f"/groups/{gid}/mail/sources").json()
+        self.assertEqual(len(src), 2)
+        self.assertNotIn("password", str(src))
 
         # письмо: от преподавателя — в «Почту», от чужого — не сохраняется
         from email.message import EmailMessage
@@ -82,6 +97,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(inbox[0]["suggestion"]["kind"], "work")
         self.assertEqual(inbox[0]["suggestion"]["subject"], "Программирование")
         self.assertEqual(c.post(f"/groups/{gid}/inbox/{inbox[0]['id']}/accept", headers=H, json={"type": "works", "id": "w1"}).json()["status"], "accepted")
+        self.assertEqual(c.post(f"/groups/{gid}/inbox/{inbox[0]['id']}/accept", headers=H, json={"type": "works", "id": "w1"}).status_code, 200)
+        self.assertEqual(c.post(f"/groups/{gid}/inbox/{inbox[0]['id']}/dismiss", headers=H).status_code, 409)
         self.assertEqual(c.get(f"/groups/{gid}/inbox").json(), [])
 
         # заместитель по коду приглашения
@@ -89,6 +106,8 @@ class ApiTest(unittest.TestCase):
         c.post("/auth/logout", headers=H)
         c.post("/auth/register", headers=H, json={"login": "zam", "email": "zam@example.ru", "password": "Deputy2026x", "consent": True})
         self.assertEqual(c.get(f"/groups/{gid}/data").status_code, 403)
+        self.assertEqual(c.get(f"/groups/{gid}/inbox").status_code, 403)
+        self.assertEqual(c.get(f"/groups/{gid}/mail/sources").status_code, 403)
         self.assertEqual(c.post("/invites/accept", headers=H, json={"code": code.lower()}).json()["role"], "deputy")
         self.assertEqual(c.get(f"/groups/{gid}/data").status_code, 200)
         self.assertEqual(c.post("/invites/accept", headers=H, json={"code": code}).status_code, 400)  # второй раз — нет

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import current_user, membership
-from ..mail.imap import HOSTS
+from ..mail.imap import HOSTS, connect
 from ..models import AuditLog, Group, InboxItem, MailMessage, MailSource, User
 from ..security import encrypt_secret
 
@@ -48,12 +48,22 @@ def add_imap(group_id: str, body: ImapIn, user: User = Depends(current_user), db
     host = body.host.strip() or HOSTS.get(body.provider, "")
     if not host:
         raise HTTPException(422, "Укажите IMAP-сервер почты")
+    if body.provider != "other" and host != HOSTS[body.provider]:
+        raise HTTPException(422, "Для выбранной почты нельзя менять IMAP-сервер")
     s = MailSource(group_id=group_id, kind="imap", provider=body.provider, imap_host=host,
                    imap_login=body.login.strip(), secret_enc=encrypt_secret(body.password))
+    try:
+        box = connect(s)
+        try:
+            box.logout()
+        except Exception:
+            pass
+    except Exception as exc:
+        raise HTTPException(422, "Не удалось войти в почту. Проверьте адрес, пароль приложения и доступ по IMAP") from exc
+    s.status = "ok"
     db.add(s)
     db.add(AuditLog(user_id=user.id, group_id=group_id, action="mail_connect", meta={"provider": body.provider}))
     db.commit()
-    # TODO (шаг 7): сразу проверить вход (imap.connect) и вернуть понятную ошибку, если пароль не подошёл
     return source_out(s, db.get(Group, group_id))
 
 
@@ -90,6 +100,10 @@ def _decide(db: Session, user: User, group_id: str, item_id: str, status: str, b
     it = db.get(InboxItem, item_id)
     if not it or it.group_id != group_id:
         raise HTTPException(404, "Не найдено")
+    if it.status != "new":
+        if it.status == status and it.result == body.model_dump():
+            return {"id": it.id, "status": it.status}
+        raise HTTPException(409, "Письмо уже обработано на другом устройстве")
     it.status, it.result, it.decided_at, it.decided_by = status, body.model_dump(), datetime.now(timezone.utc), user.id
     db.commit()
     return {"id": it.id, "status": it.status}

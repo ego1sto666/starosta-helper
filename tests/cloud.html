@@ -1,0 +1,39 @@
+<!doctype html><meta charset="utf-8"><title>Аккаунт, группы и почта</title>
+<iframe id="app" style="width:390px;height:850px;border:0"></iframe>
+<script>
+const report=[], errors=[];
+const check=(ok,label)=>{report.push(`${ok?'OK':'FAIL'} ${label}`);if(!ok)errors.push(label)};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(fn,label){for(let i=0;i<80;i++){const x=fn();if(x)return x;await wait(100)}throw Error('Не дождались: '+label)}
+async function run(){
+  localStorage.clear();
+  const frame=document.querySelector('#app'); let html=await(await fetch('/index.html')).text();
+  html=html.replace('<head>','<head><base href="/">');
+  const mock=`window.STAROSTA_PRIVACY_URL='/privacy.html';
+    let groups=[],data={};let inbox=[{id:'i1',suggestion:{kind:'work',title:'Сдать отчёт',subject:'Физика',due:'2026-11-20'},mail:{from:'Преподаватель',subject:'Отчёт',text:'Сдать отчёт до 20.11',sent_at:'2026-11-07'}}];
+    window.StarostaAPI={enabled:()=>true,auth:{me:()=>Promise.resolve({id:'u1',login:'chief',email:'chief@example.ru'}),logout:()=>Promise.resolve()},
+    groups:{list:()=>Promise.resolve(groups),create:(title,d,university)=>{const g={id:'g1',title,university,mail_address:'test@in.starosta.local'};groups=[g];data=d;return Promise.resolve(g)},pull:()=>Promise.resolve({rev:1,data}),push:(id,rev,d)=>{data=d;return Promise.resolve({rev:rev+1})}},
+    mail:{sources:()=>Promise.resolve([{id:'f1',kind:'forward',address:'test@in.starosta.local'}]),inbox:()=>Promise.resolve(inbox),accept:(g,i)=>{inbox=inbox.filter(x=>x.id!==i);return Promise.resolve()},dismiss:()=>Promise.resolve(),addImap:()=>Promise.resolve(),remove:()=>Promise.resolve()},
+    createSync:({groupId,getData,setData,onState})=>({pull:async()=>setData(data),push:async()=>{data=getData();onState('ok')},changed:()=>{data=getData()},stop:()=>{}})};`;
+  const close='</scr'+'ipt>';
+  html=html.replace('<script src="js/app.js">'+close,'<scr'+'ipt>'+mock+close+'<script src="js/app.js">'+close);
+  frame.srcdoc=html;await new Promise(r=>frame.onload=r);const d=frame.contentDocument;
+  frame.contentWindow.location.hash='#account';
+  const form=await until(()=>d.querySelector('form[data-cloud-create]'),'форма создания группы');
+  form.elements.university.value='Другой университет';form.elements.title.value='АБ-12';form.requestSubmit();
+  await until(()=>frame.contentWindow.location.hash==='#home','открытие группы');
+  check(d.querySelector('.topbar')?.textContent.includes('АБ-12'),'группа другого вуза открыта');
+  frame.contentWindow.location.hash='#mail';
+  const item=await until(()=>d.querySelector('[data-act="mailCreate"]'),'входящее письмо');
+  check(d.querySelector('#view')?.textContent.includes('Сдать отчёт'),'письмо показано');
+  item.click();await until(()=>!d.querySelector('[data-act="mailCreate"]'),'письмо принято');
+  check(JSON.parse(localStorage.getItem('starosta.cloud.u1.g1')).works.some(w=>w.source_mail==='i1'),'сдача создана в своей группе');
+  check(!localStorage.getItem('starosta.data'),'локальная группа не перезаписана');
+  frame.contentWindow.location.hash='#account';
+  await until(()=>d.querySelector('.account__groups'),'список групп');
+  check(d.querySelector('.account__groups')?.textContent.includes('Другой университет'),'вуз показан в аккаунте');
+  report.push('ERRORS: '+(errors.length?errors.join(' | '):'нет'));
+}
+run().catch(e=>report.push('FAIL '+e.message,'ERRORS: '+e.message))
+ .finally(()=>fetch('/__save/result-cloud.txt',{method:'POST',body:report.join('\n')}));
+</script>

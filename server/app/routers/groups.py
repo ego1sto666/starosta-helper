@@ -29,18 +29,19 @@ MAX_DATA_BYTES = 5 * 1024 * 1024  # столько же примерно пом�
 
 class GroupIn(BaseModel):
     title: str = Field(min_length=1, max_length=60)
+    university: str = Field(default="", max_length=120)
     nntu_group: str = Field(default="", max_length=60)
     data: dict | None = None  # можно сразу перенести данные с устройства
 
 
 def group_out(g: Group, role: str) -> dict:
-    return {"id": g.id, "title": g.title, "nntu_group": g.nntu_group, "role": role,
+    return {"id": g.id, "title": g.title, "university": g.university, "nntu_group": g.nntu_group, "role": role,
             "mail_address": f"{g.mail_code}@{settings.mail_domain}"}
 
 
 @router.post("/groups", status_code=201)
 def create_group(body: GroupIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    g = Group(title=body.title.strip(), nntu_group=body.nntu_group.strip(), mail_code=new_mail_code(body.title))
+    g = Group(title=body.title.strip(), university=body.university.strip() or "Не указан", nntu_group=body.nntu_group.strip(), mail_code=new_mail_code(body.title))
     db.add(g)
     db.flush()
     db.add(Membership(user_id=user.id, group_id=g.id, role="head"))

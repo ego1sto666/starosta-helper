@@ -4,7 +4,7 @@
 CREATE TABLE groups (
 	id VARCHAR(32) NOT NULL, 
 	title VARCHAR(60) NOT NULL, 
-	university VARCHAR(60) NOT NULL, 
+	university VARCHAR(120) NOT NULL,
 	nntu_group VARCHAR(60) NOT NULL, 
 	mail_code VARCHAR(40) NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 

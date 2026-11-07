@@ -1,11 +1,11 @@
-/* Клиент сервера «Помощника старосты» — ЧЕРНОВИК. Подключён к странице, но без STAROSTA_API запросы не выполняются.
+/* Клиент сервера «Помощника старосты». Без STAROSTA_API запросы не выполняются.
 
-   Как будет работать (server/design/sync.md):
+   Режимы (server/design/sync.md):
    • без аккаунта — всё как сейчас: данные только в этом браузере (StarostaAPI.enabled() === false);
    • с аккаунтом — те же данные (data.json) хранятся ещё и на сервере, приложение синхронизирует их
      с другими устройствами и замом; письма преподавателей приходят на экран «Почта».
 
-   Подключение сервера (шаг 3–4 в ROADMAP.md): до этого файла задать window.STAROSTA_API = "/api".
+   Адрес локального сервера задаёт js/config.js. В публикации его задаёт конфигурация развёртывания.
    Вход хранится в cookie (httpOnly), токенов в localStorage нет. */
 (() => {
   "use strict";
@@ -46,7 +46,7 @@
     },
     groups: {
       list: () => get("/groups"),
-      create: (title, data) => post("/groups", { title, nntu_group: (data && data.settings && data.settings.nntu_group) || "", data }),
+      create: (title, data, university = "") => post("/groups", { title, university, nntu_group: (data && data.settings && data.settings.nntu_group) || "", data }),
       pull: id => get(`${g(id)}/data`),
       push: (id, rev, data) => put(`${g(id)}/data`, { rev, data }),
       invite: (id, role = "deputy") => post(`${g(id)}/invites`, { role }),
@@ -97,20 +97,27 @@
   }
 
   /* ---------- синхронизация: отправить через 3 с после последнего изменения, при 409 — слить и повторить ---------- */
-  function createSync({ groupId, getData, setData, onState = () => {} }) {
-    let rev = 0, base = null, timer = 0, busy = false;
+  function createSync({ groupId, getData, setData, snapshot = null, onSnapshot = () => {}, onState = () => {} }) {
+    let rev = snapshot?.rev ?? 0, base = snapshot?.base ?? null, timer = 0, busy = false;
+    const copy = value => JSON.parse(JSON.stringify(value));
     async function pull() {
-      const r = await API.groups.pull(groupId); rev = r.rev; base = r.data; setData(r.data); onState("ok");
+      const r = await API.groups.pull(groupId), local = getData();
+      const merged = base && local ? mergeData(base, local, r.data) : r.data;
+      rev = r.rev; base = copy(r.data); onSnapshot({ rev, base });
+      if (!same(local, merged)) setData(merged);
+      if (!same(merged, r.data)) schedule(); else onState("ok");
     }
     async function push() {
       if (busy) return schedule(); busy = true; onState("saving");
       try {
         for (let i = 0; i < 3; i++) {
-          const mine = getData();
-          try { rev = (await API.groups.push(groupId, rev, mine)).rev; base = mine; onState("ok"); return; }
+          const mine = copy(getData());
+          try { rev = (await API.groups.push(groupId, rev, mine)).rev; base = mine; onSnapshot({ rev, base }); onState("ok");
+            if (!same(getData(), mine)) schedule(); return; }
           catch (e) {
             if (e.status !== 409) throw e;
-            const merged = mergeData(base, mine, e.detail.data); rev = e.detail.rev; base = e.detail.data; setData(merged);
+            const merged = mergeData(base, getData(), e.detail.data); rev = e.detail.rev; base = copy(e.detail.data);
+            onSnapshot({ rev, base }); setData(merged);
           }
         }
         onState("conflict");
@@ -118,7 +125,8 @@
       finally { busy = false; }
     }
     function schedule() { clearTimeout(timer); timer = setTimeout(push, 3000); }
-    return { pull, push, changed: schedule };
+    function stop() { clearTimeout(timer); timer = 0; }
+    return { pull, push, changed: schedule, stop };
   }
 
   window.StarostaAPI = Object.assign(API, { mergeData, createSync });

@@ -1,4 +1,4 @@
-/* Помощник старосты — приложение для старост НГТУ в браузере.
+/* Помощник старосты — браузерное приложение для старост разных вузов.
    Данные хранятся только в этом браузере (localStorage), формат — тот же data.json,
    что был у программы на ПК, поэтому старый файл можно просто загрузить.
    Правила (недели, подгруппы, отметки) перенесены из прежней Kivy-версии. */
@@ -83,6 +83,7 @@
   /* ================= ДАННЫЕ ================= */
   let DB = null;             // все данные группы (формат data.json)
   const DATA_KEY = "starosta.data";
+  let activeDataKey = DATA_KEY;
   // пример для гостей сайта: список и расписание группы 26-ИВТ-2-1, отметки расставляются случайно
   const DEMO_URL = "demo/group.json";
   // ссылка на Google Форму с отзывами; если пусто — кнопки «Оценить» не показываются
@@ -117,17 +118,18 @@
   }
 
   function loadData() {
-    try { const raw = localStorage.getItem(DATA_KEY); DB = raw ? normalize(JSON.parse(raw)) : null; }
+    try { const raw = localStorage.getItem(activeDataKey); DB = raw ? normalize(JSON.parse(raw)) : null; }
     catch (e) { DB = null; }
     return !!DB;
   }
 
   // каждое изменение данных проходит через persist()
   function persist() {
-    try { localStorage.setItem(DATA_KEY, JSON.stringify(DB)); }
+    try { localStorage.setItem(activeDataKey, JSON.stringify(DB)); }
     catch (e) { toast("Не удалось сохранить: в браузере нет места или запрещено хранение. Скачайте копию данных в настройках.", "info"); return; }
     // просим браузер не удалять данные при нехватке места (молча, один раз)
     if (!persist.asked && navigator.storage && navigator.storage.persist) { persist.asked = true; navigator.storage.persist().catch(() => {}); }
+    if (SYNC && !SYNC_SILENT) SYNC.changed();
   }
   function setDB(d) { DB = normalize(d); MK = null; persist(); }
 
@@ -620,7 +622,7 @@
   }
   // раз в день при открытии (или по кнопке): тихо, без ошибок на экране
   async function autoCheck(force) {
-    if (!DB || !DB.settings.nntu_group || (!force && DB.settings.nntu_checked === key(TODAY))) return false;
+    if (!DB || !nntuAvailable() || !DB.settings.nntu_group || (!force && DB.settings.nntu_checked === key(TODAY))) return false;
     if (!force && navigator.onLine === false) return false;
     let res;
     try { res = await NNTU.schedule(DB.settings.nntu_group, TODAY); } catch (e) { if (force) toast(NNTU_ERR.net, "info"); return false; }
@@ -693,7 +695,7 @@
       risk.length && `<a class="card card--tap tip tip--link tip--risk" href="#stats" data-act="riskView">${ic("risk")}<div class="tip__body"><b>Риск недопуска: ${risk.length} ${plural(risk.length, ["студент", "студента", "студентов"])}</b><span>${esc(risk.slice(0, 3).map(x => shortName(x.s.name)).join(", "))}${risk.length > 3 ? ` и ещё ${risk.length - 3}` : ""} — посещаемость по предмету ниже ${riskPct()}%</span></div>${ic("right", "tip__arrow")}</a>`,
       bToday.length && `<div class="card tip tip--bday">${ic("cake")}<div class="tip__body"><b>Сегодня день рождения</b><span>${esc(bToday.map(x => x.s.name + (x.age ? ` (${x.age})` : "")).join(", "))}</span></div><button class="btn btn--primary btn--sm" data-act="copyText" data-t="${esc(bToday.map(x => greeting(x.s)).join("\n"))}">${ic("copy")}Поздравление</button></div>`,
       liveNews() && `<div class="card tip tip--live">${ic("calendar")}<div class="tip__body"><b>Изменения в расписании</b><span>На сайте НГТУ: ${LIVE.changes.length} ${plural(LIVE.changes.length, ["изменение", "изменения", "изменений"])} на ближайшие дни</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="live">Посмотреть</button></div>`,
-      !DB.lessons.length && `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Загрузите его с сайта НГТУ — это займёт пару секунд.</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="nntu">Загрузить</button></div>`,
+      !DB.lessons.length && (nntuAvailable() ? `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Загрузите его с сайта НГТУ — это займёт пару секунд.</span></div><button class="btn btn--primary btn--sm" data-act="form" data-f="nntu">Загрузить</button></div>` : `<div class="card tip">${ic("schedule")}<div class="tip__body"><b>Расписания пока нет</b><span>Добавьте пары в журнале.</span></div><a class="btn btn--primary btn--sm" href="#journal">Открыть журнал</a></div>`),
       !DB.students.length && `<div class="card tip">${ic("add_many")}<div class="tip__body"><b>Добавьте студентов</b><span>Без списка группы не получится отмечать посещаемость.</span></div><a class="btn btn--soft btn--sm" href="#group">К группе</a></div>`,
     ].filter(Boolean).join("");
     // напоминание о копии — не срочное, поэтому в боковой колонке (на телефоне — после пар)
@@ -750,10 +752,10 @@
     const body = !info.active && !list.length ? empty("coffee", info.label, "Занятий по расписанию в эти дни нет.", `<button class="btn btn--soft" data-act="form" data-f="term">${ic("calendar")}Период занятий</button>`)
       : list.length ? timeline(list, d, "journal")
       : semCount ? empty("coffee", "Пар нет", d.getDay() === 0 ? "Воскресенье — выходной." : "В этот день занятий нет. Нажмите «+», чтобы добавить пару.")
-      : empty("schedule", "В расписании пока нет пар", "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>`);
+      : empty("schedule", "В расписании пока нет пар", nntuAvailable() ? "Загрузите расписание с сайта НГТУ или добавьте пары кнопкой «+»." : "Добавьте первую пару кнопкой «+».", nntuAvailable() ? `<button class="btn btn--primary" data-act="form" data-f="nntu">${ic("download")}Загрузить с сайта НГТУ</button>` : "");
     return {
       title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
-      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ["download", "Обновить расписание с сайта НГТУ", "form", "nntu"], ["calendar", "Выбрать дату", "pickDate"]],
+      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ...(nntuAvailable() ? [["download", "Обновить расписание с сайта НГТУ", "form", "nntu"]] : []), ["calendar", "Выбрать дату", "pickDate"]],
       html: `${strip}
         <div class="bells only-narrow">${ic("clock")}Звонки: ${bl.length} ${plural(bl.length, ["пара", "пары", "пар"])}, ${bl[0][0]}–${bl[bl.length - 1][1]}</div>
         <div class="split">
@@ -1391,8 +1393,9 @@
             ${sectionHead("school", "Группа и учебный год")}
             <section class="card" style="padding:4px 14px">
               ${row("Название группы", esc(DB.settings.group || "не указано"), editBtn("groupName"))}
-              ${row("Расписание НГТУ", ng ? `Группа ${esc(ng)}${synced ? ` · обновлено ${fmtDate(synced)}` : ""}` : "Не подключено — пары можно загрузить с сайта НГТУ",
-                `<button class="btn btn--${ng ? "soft" : "primary"} btn--sm" data-act="form" data-f="nntu">${ic("download")}${ng ? "Обновить" : "Загрузить"}</button>`)}
+              ${nntuAvailable() ? row("Расписание НГТУ", ng ? `Группа ${esc(ng)}${synced ? ` · обновлено ${fmtDate(synced)}` : ""}` : "Не подключено — пары можно загрузить с сайта НГТУ",
+                `<button class="btn btn--${ng ? "soft" : "primary"} btn--sm" data-act="form" data-f="nntu">${ic("download")}${ng ? "Обновить" : "Загрузить"}</button>`)
+                : ""}
               ${ng ? row("Автопроверка", `Раз в день при открытии сверяем ближайшие дни с сайтом${DB.settings.nntu_checked ? ` · последняя ${fmtDate(parseISO(DB.settings.nntu_checked))}` : ""}`,
                 `<button class="btn btn--neutral btn--sm" data-act="checkNow">Проверить</button>`) : ""}
               ${row("Период занятий", `${fmtDate(tm.start)} — ${fmtDate(tm.end)} · ${weekInfo(TODAY).label}`, editBtn("term"))}
@@ -1407,10 +1410,11 @@
             </section>
           </div>
           <div class="stack">
-            ${sectionHead("download", "Данные. Только на этом устройстве")}
+            ${sectionHead("download", BOUND_GROUP ? "Данные группы" : "Данные. Только на этом устройстве")}
             <section class="card" style="padding:4px 14px">
-              ${row("Аккаунт старосты", "Регистрация и вход для будущей синхронизации. Сейчас данные группы остаются на этом устройстве.", `<a class="btn btn--soft btn--sm" href="#account">${ic("lock")}Открыть</a>`)}
-              ${row("Где хранятся", "Только в этом браузере на этом устройстве. Ни сайт, ни НГТУ их не видят.")}
+              ${row("Аккаунт старосты", BOUND_GROUP ? `Группа ${esc(BOUND_GROUP.title)} · ${SYNC_STATE === "offline" ? "сохранена на устройстве" : "синхронизация включена"}` : "Войдите, чтобы сохранять данные группы на сервере.", `<a class="btn btn--soft btn--sm" href="#account">${ic("lock")}Открыть</a>`)}
+              ${row("Где хранятся", BOUND_GROUP ? "В этом браузере и на сервере вашего аккаунта." : "Только в этом браузере на этом устройстве.")}
+              ${row("Почта преподавателей", BOUND_GROUP ? "Письма с адресов преподавателей вашей группы" : "Сначала войдите в аккаунт и выберите группу", `<a class="btn btn--soft btn--sm" href="#mail">${ic("email")}Открыть</a>`)}
               ${row("Скачать копию", lastBackup ? `Последняя — ${fmtDate(new Date(lastBackup))}` : "Ещё ни разу — стоит сделать", `<button class="btn btn--${needBackup() ? "primary" : "soft"} btn--sm" data-act="exportJson">${ic("download")}Скачать</button>`)}
               ${row("Загрузить из файла", "Заменить данные этого браузера копией или data.json из программы на ПК", `<button class="btn btn--neutral btn--sm" data-act="importJson">Выбрать файл</button>`)}
               ${row("Удалить всё", "Стереть данные группы из этого браузера", `<button class="btn btn--danger btn--sm" data-act="wipe">${ic("delete")}Удалить</button>`)}
@@ -1424,7 +1428,7 @@
               ${row("Как пользоваться", "Короткая инструкция: с чего начать и что умеет приложение", `<a class="btn btn--neutral btn--sm" href="#help">${ic("help")}Открыть</a>`)}
               ${FEEDBACK_URL ? row("Оценить приложение", "Короткая анкета: что нравится, что неудобно, чего не хватает", feedbackBtn("btn btn--soft btn--sm")) : ""}
               ${isDemo() ? row("Пример", "Сейчас открыт пример со случайными отметками", `<button class="btn btn--neutral btn--sm" data-act="demoExit">Выйти</button>`) : ""}
-              ${row("О приложении", "Неофициальный помощник для старост НГТУ им. Р. Е. Алексеева. Расписание берётся с открытого сайта НГТУ.")}
+              ${row("О приложении", "Неофициальный помощник для старост разных вузов. Для групп НГТУ доступна загрузка расписания с открытого сайта вуза.")}
             </section>
           </div>
         </div>`,
@@ -1433,26 +1437,63 @@
 
   /* ----- аккаунт: экран готов к API; локальные данные пока не синхронизируются ----- */
   const ACCOUNT_API = window.StarostaAPI;
-  let ACCOUNT = null, ACCOUNT_CHECKED = false;
-  const accountReady = () => !!(ACCOUNT_API && ACCOUNT_API.enabled());
+  let ACCOUNT = null, ACCOUNT_CHECKED = false, SERVER_AVAILABLE = null;
+  let GROUPS = [], BOUND_GROUP = null, SYNC = null, SYNC_SILENT = false, SYNC_STATE = "";
+  let MAIL_STATE = { groupId: "", items: [], sources: [], loading: false, loaded: false, error: "" };
+  const cloudKey = (uid, gid) => `starosta.cloud.${uid}.${gid}`;
+  const snapshotKey = (uid, gid) => `sync.${uid}.${gid}`;
+  const accountReady = () => !!(ACCOUNT_API && ACCOUNT_API.enabled() && SERVER_AVAILABLE !== false);
+  const nntuAvailable = () => !BOUND_GROUP || /ннту|алексеева/i.test(BOUND_GROUP.university || "");
+  async function loadGroups() { GROUPS = await ACCOUNT_API.groups.list(); }
+  async function bindGroup(group, navigate = true) {
+    if (!ACCOUNT || !GROUPS.some(g => g.id === group.id)) throw Error("Нет доступа к этой группе");
+    if (SYNC) SYNC.stop(); SYNC = null;
+    BOUND_GROUP = group; activeDataKey = cloudKey(ACCOUNT.id, group.id);
+    MAIL_STATE = { groupId: group.id, items: [], sources: [], loading: false, loaded: false, error: "" };
+    loadData();
+    const snapshot = store.get(snapshotKey(ACCOUNT.id, group.id), null);
+    let instance;
+    const currentGroup = () => BOUND_GROUP?.id === group.id && SYNC === instance;
+    instance = ACCOUNT_API.createSync({ groupId: group.id, getData: () => currentGroup() ? DB : null,
+      setData: d => { if (!currentGroup()) return; SYNC_SILENT = true; try { DB = normalize(d); persist(); } finally { SYNC_SILENT = false; } if (location.hash !== "#account") render(true); },
+      snapshot, onSnapshot: value => { if (currentGroup()) store.set(snapshotKey(ACCOUNT.id, group.id), value); },
+      onState: state => { if (!currentGroup()) return; SYNC_STATE = state; if (state === "error" || state === "offline") toast("Группа сохранена на этом устройстве — синхронизация позже", "wifioff"); } });
+    SYNC = instance;
+    store.set("activeCloud", { uid: ACCOUNT.id, gid: group.id });
+    try { await instance.pull(); }
+    catch (e) { SYNC_STATE = "offline"; if (!DB) { SYNC.stop(); SYNC = null; BOUND_GROUP = null; activeDataKey = DATA_KEY; loadData(); throw e; } }
+    if (navigate) { location.hash = "#home"; render(); }
+  }
+  async function restoreAccount() {
+    if (!accountReady()) return;
+    ACCOUNT_CHECKED = true;
+    try {
+      ACCOUNT = await ACCOUNT_API.auth.me(); SERVER_AVAILABLE = true; await loadGroups();
+      const saved = store.get("activeCloud", null), group = saved?.uid === ACCOUNT.id && GROUPS.find(g => g.id === saved.gid);
+      if (group) await bindGroup(group, false);
+    } catch (e) { if (e.status === 0) SERVER_AVAILABLE = false; else if (e.status === 401) SERVER_AVAILABLE = true;
+      if (!ACCOUNT || e.status === 401 || e.status === 403) { ACCOUNT = null; GROUPS = []; } }
+  }
   const privacyUrl = () => {
     const url = window.STAROSTA_PRIVACY_URL || "";
     return /^(https:\/\/|\/(?!\/))/.test(url) ? url : "";
   };
   SCREENS.account = mode => {
-    if (accountReady() && !ACCOUNT_CHECKED) {
-      ACCOUNT_CHECKED = true;
-      ACCOUNT_API.auth.me().then(u => { ACCOUNT = u; if (location.hash.startsWith("#account")) render(true); }).catch(() => {});
-    }
     const register = mode === "register", ready = accountReady(), policy = privacyUrl();
-    const note = !ready ? `<p class="account__note" role="status">Сервер пока не подключён. Регистрация и вход станут доступны после настройки онлайн-версии.</p>`
+    const note = !ready ? `<p class="account__note" role="status">${window.STAROSTA_API ? "Локальный сервер не отвечает. Запустите «Открыть с аккаунтом.bat» и обновите страницу." : "Сервер пока не подключён. Регистрация и вход станут доступны после настройки онлайн-версии."}</p>`
       : register && !policy ? `<p class="account__note" role="status">Для регистрации нужно опубликовать политику обработки данных.</p>` : "";
     return { title: register ? "Регистрация" : "Аккаунт", nav: "account", welcome: true,
       html: `<div class="account"><a class="account__back" href="${DB ? "#settings" : "#home"}">${ic("back")}Назад к приложению</a>
         <div class="account__brand"><span class="brand__logo">${ic("school")}</span><h1>${ACCOUNT ? "Ваш аккаунт" : register ? "Создать аккаунт" : "Вход для старосты"}</h1>
-          <p>${ACCOUNT ? "Аккаунт подготовлен для будущей синхронизации." : "Сейчас записи группы сохраняются только в этом браузере."}</p></div>
+          <p>${ACCOUNT ? "Выберите группу или создайте новую — данные каждой группы будут отдельно." : "Без аккаунта записи сохраняются в этом браузере."}</p></div>
         <section class="card account__card">${ACCOUNT ? `<div class="account__person"><b>${esc(ACCOUNT.name || ACCOUNT.login)}</b><span>${esc(ACCOUNT.email || ACCOUNT.login)}</span></div>
-            <p class="account__note">Вы вошли в аккаунт. Данные группы пока не переносятся на сервер и не появятся на другом устройстве.</p>
+            ${BOUND_GROUP ? `<p class="account__note">Открыта группа <b>${esc(BOUND_GROUP.title)}</b> · ${esc(BOUND_GROUP.university || "Вуз не указан")}. Состояние: ${SYNC_STATE === "offline" ? "нет сети, данные на устройстве" : SYNC_STATE === "saving" ? "сохраняем" : "синхронизировано"}.</p><a class="btn btn--soft btn--block" href="#mail">${ic("email")}Письма преподавателей</a>` : ""}
+            <div class="account__groups"><h2>Мои группы</h2>${GROUPS.length ? GROUPS.map(g => `<button class="account__group" data-act="openCloud" data-id="${esc(g.id)}"><b>${esc(g.title)}</b><small>${esc(g.university || "Вуз не указан")}${g.id === BOUND_GROUP?.id ? " · открыта" : ""}</small></button>`).join("") : `<p class="muted">Групп пока нет. Создайте свою ниже.</p>`}</div>
+            <form class="account__form" data-cloud-create><h2>Новая группа</h2>
+              <div class="field"><label for="cloud-university">Вуз</label><input id="cloud-university" name="university" required maxlength="120" placeholder="Название вашего вуза"></div>
+              <div class="field"><label for="cloud-title">Номер или название группы</label><input id="cloud-title" name="title" required maxlength="60" placeholder="ИВТ-2-1"></div>
+              ${DB && activeDataKey === DATA_KEY && !isDemo() ? `<label class="account__consent"><input name="transfer" type="checkbox"><span>Перенести данные этой группы с устройства в новый аккаунт</span></label>` : ""}
+              ${formErr}<button class="btn btn--primary btn--block">Создать группу</button></form>
             <button class="btn btn--neutral btn--block" data-act="accountLogout">Выйти из аккаунта</button>`
           : `<div class="seg seg--fit account__tabs" role="navigation" aria-label="Аккаунт"><a href="#account"${!register ? ' aria-current="page"' : ""}>Вход</a><a href="#account/register"${register ? ' aria-current="page"' : ""}>Регистрация</a></div>
             ${note}<form data-auth="${register ? "register" : "login"}" class="account__form">
@@ -1467,8 +1508,51 @@
                 <label class="account__consent"><input name="consent" type="checkbox" required><span>Согласен на обработку данных по ${policy ? `<a href="${esc(policy)}" target="_blank" rel="noopener">политике конфиденциальности</a>` : "политике конфиденциальности"}.</span></label>` : ""}
               ${formErr}<button class="btn btn--primary btn--block btn--lg"${!ready || (register && !policy) ? " disabled" : ""}>${register ? "Создать аккаунт" : "Войти"}</button>
             </form>`}</section>
-        <p class="account__foot">Вход в аккаунт не переносит записи группы. Перенос данных и доступ заместителя — следующий этап.</p>
+        <p class="account__foot">Данные другой группы не открываются без доступа к её аккаунту. Почту преподавателей подключают отдельно для каждой группы.</p>
       </div>` };
+  };
+
+  async function refreshMail() {
+    if (!BOUND_GROUP || MAIL_STATE.loading) return;
+    const groupId = BOUND_GROUP.id;
+    MAIL_STATE = { ...MAIL_STATE, groupId, loading: true, error: "" };
+    if (location.hash.startsWith("#mail")) render(true);
+    try {
+      const [items, sources] = await Promise.all([ACCOUNT_API.mail.inbox(groupId), ACCOUNT_API.mail.sources(groupId)]);
+      if (BOUND_GROUP?.id !== groupId) return;
+      MAIL_STATE = { groupId, items, sources, loading: false, loaded: true, error: "" };
+    } catch (e) { MAIL_STATE = { ...MAIL_STATE, loading: false, loaded: true, error: e.message || "Почта недоступна" }; }
+    if (location.hash.startsWith("#mail")) render(true);
+  }
+  SCREENS.mail = () => {
+    if (!BOUND_GROUP) return { title: "Почта", back: "#account", nav: "settings", html: empty("email", "Сначала откройте свою группу", "Войдите в аккаунт и выберите группу — её письма будут видны только вам и вашему заместителю.") + `<a class="btn btn--primary" href="#account">Открыть аккаунт</a>` };
+    const items = MAIL_STATE.groupId === BOUND_GROUP.id ? MAIL_STATE.items : [], loading = MAIL_STATE.loading;
+    const teachers = DB.teachers.flatMap(t => String(t.email || "").split(/[,;\s]+/).filter(x => x.includes("@")));
+    const address = BOUND_GROUP.mail_address || "";
+    const cards = items.map(it => { const m = it.mail, s = it.suggestion || {}, kind = s.kind || "info";
+      const action = kind === "work" ? "Создать сдачу" : kind === "event" ? "Создать событие" : kind === "exam" ? "Создать экзамен" : "Создать дело";
+      return `<article class="card mail-card"><div class="mail-card__head"><span>${ic("email")}${esc(m.from || m.from_addr)}</span><small>${esc(m.sent_at || "")}</small></div>
+        <h3>${esc(m.subject || "Без темы")}</h3><p class="mail-card__suggest">${esc(s.kind_title || "Письмо")}${s.due ? ` · срок ${esc(s.due)}` : ""}</p>
+        <details><summary>Читать письмо</summary><p class="mail-card__text">${esc(m.text || "Текст письма пуст")}</p></details>
+        <div class="btn-row"><button class="btn btn--soft btn--sm" data-act="mailCreate" data-id="${esc(it.id)}">${action}</button>
+          <button class="btn btn--neutral btn--sm" data-act="mailDismiss" data-id="${esc(it.id)}">Отклонить</button></div></article>`; }).join("");
+    return { title: "Почта", sub: `${BOUND_GROUP.title} · ${BOUND_GROUP.university || "вуз не указан"}`, back: "#home", nav: "settings",
+      actions: [["download", "Обновить письма", "mailRefresh"]],
+      after: () => { if ((!MAIL_STATE.loaded || MAIL_STATE.groupId !== BOUND_GROUP.id) && !MAIL_STATE.loading) refreshMail(); },
+      html: `<section class="card mail-connect"><div class="card__head">${ic("email")}<h3>Почта группы</h3></div>
+        <p>Адрес для пересылки писем преподавателей:</p><div class="mail-connect__address"><code>${esc(address)}</code>${copyBtn(address, "Скопировать адрес", "btn btn--soft btn--sm")}</div>
+        <p class="muted">Адрес пересылки заработает после настройки почтового домена. Сейчас можно подключить свой ящик ниже.</p>
+        <details><summary>Какие письма попадут в приложение</summary><p>Только письма от адресов преподавателей, указанных в этой группе: ${teachers.length ? teachers.map(esc).join(", ") : "пока ни одного адреса"}. ${teachers.length ? "" : "Добавьте почту в карточке преподавателя."}</p></details></section>
+        <section class="card mail-connect"><div class="card__head">${ic("email")}<h3>Подключённые ящики</h3></div>
+          ${MAIL_STATE.sources.filter(s => s.kind === "imap").map(s => `<div class="mail-source"><div><b>${esc(s.login)}</b><small>${esc(s.provider)} · ${s.status === "error" ? `ошибка: ${esc(s.error || "проверьте пароль")}` : "подключено"}</small></div><button class="btn btn--neutral btn--sm" data-act="mailRemove" data-id="${esc(s.id)}">Отключить</button></div>`).join("") || `<p class="muted">Пока нет подключённых ящиков.</p>`}
+          <form data-mail-connect class="account__form"><div class="field"><label for="imap-provider">Почта</label><select id="imap-provider" name="provider"><option value="yandex">Яндекс</option><option value="mailru">Mail</option><option value="gmail">Gmail</option><option value="other">Другой IMAP</option></select></div>
+            <div class="field"><label for="imap-login">Адрес ящика</label><input id="imap-login" name="login" type="email" autocomplete="email" required></div>
+            <div class="field"><label for="imap-password">Пароль приложения</label><input id="imap-password" name="password" type="password" autocomplete="off" required></div>
+            <div class="field"><label for="imap-host">IMAP-сервер (только для «Другой IMAP»)</label><input id="imap-host" name="host" placeholder="imap.example.ru"></div>
+            <p class="account__help">Создайте отдельный пароль приложения в настройках своей почты. Основной пароль от ящика сюда не вводите. Читаются только письма от преподавателей группы.</p>${formErr}<button class="btn btn--primary" type="submit">Подключить ящик</button></form></section>
+        <div class="section-head"><h2>Входящие ${items.length ? `· ${items.length}` : ""}</h2></div>
+        ${MAIL_STATE.error ? `<p class="account__note" role="alert">${esc(MAIL_STATE.error)}</p>` : ""}
+        ${loading ? `<p class="muted">Загружаем письма…</p>` : items.length ? `<div class="grid grid--cols">${cards}</div>` : `<p class="muted">Новых писем нет. Письма преподавателей появятся здесь после пересылки.</p>`}` };
   };
 
   /* ----- пример для гостей ----- */
@@ -2348,10 +2432,37 @@
       ACCOUNT = register
         ? await ACCOUNT_API.auth.register({ login: v.login.trim(), email: v.email.trim(), name: v.name.trim(), password: v.password, consent: true })
         : await ACCOUNT_API.auth.login(v.login.trim(), v.password);
-      ACCOUNT_CHECKED = true;
+      ACCOUNT_CHECKED = true; await loadGroups();
       render(true);
     } catch (x) { fail(x.message || "Не удалось связаться с сервером"); }
     finally { if (f.isConnected) { button.disabled = false; f.removeAttribute("aria-busy"); } }
+  });
+
+  document.addEventListener("submit", async e => {
+    const f = e.target.closest("form[data-cloud-create]"); if (!f) return;
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(f)), button = f.querySelector("button"), err = f.querySelector(".form-err");
+    err.hidden = true; button.disabled = true;
+    try {
+      const local = v.transfer && activeDataKey === DATA_KEY && DB && !isDemo() ? structuredClone(DB) : normalize({ settings: { group: v.title.trim() } });
+      local.settings.group = v.title.trim();
+      const g = await ACCOUNT_API.groups.create(v.title.trim(), local, v.university.trim());
+      GROUPS.push(g); await bindGroup(g);
+    } catch (x) { err.textContent = x.message || "Не удалось создать группу"; err.hidden = false; }
+    finally { if (f.isConnected) button.disabled = false; }
+  });
+
+  document.addEventListener("submit", async e => {
+    const f = e.target.closest("form[data-mail-connect]"); if (!f) return;
+    e.preventDefault();
+    if (!BOUND_GROUP) return;
+    const v = Object.fromEntries(new FormData(f)), button = f.querySelector('button[type="submit"]'), err = f.querySelector(".form-err");
+    err.hidden = true; button.disabled = true;
+    try {
+      await ACCOUNT_API.mail.addImap(BOUND_GROUP.id, { provider: v.provider, login: v.login.trim(), password: v.password, host: v.host.trim() });
+      f.reset(); await refreshMail(); toast("Почта подключена");
+    } catch (x) { err.textContent = x.message || "Не удалось подключить почту"; err.hidden = false; }
+    finally { if (f.isConnected) button.disabled = false; }
   });
 
   document.addEventListener("submit", e => {
@@ -2588,8 +2699,42 @@
   const confirmed = el => el.dataset.confirmed === "1";
   const ACT = {
     accountLogout: async () => {
-      try { await ACCOUNT_API.auth.logout(); ACCOUNT = null; ACCOUNT_CHECKED = true; render(true); }
+      try { await ACCOUNT_API.auth.logout(); if (SYNC) SYNC.stop(); SYNC = null; BOUND_GROUP = null; GROUPS = []; ACCOUNT = null; ACCOUNT_CHECKED = true;
+        MAIL_STATE = { groupId: "", items: [], sources: [], loading: false, loaded: false, error: "" };
+        SYNC_STATE = ""; activeDataKey = DATA_KEY; store.set("activeCloud", null); loadData(); render(true); }
       catch (e) { toast(e.message || "Не удалось выйти из аккаунта", "info"); }
+    },
+    openCloud: async el => {
+      const group = GROUPS.find(g => g.id === el.dataset.id); if (!group) return;
+      try { await bindGroup(group); } catch (e) { toast(e.message || "Группа недоступна", "info"); }
+    },
+    mailRefresh: () => refreshMail(),
+    mailRemove: async el => {
+      if (!BOUND_GROUP) return;
+      try { await ACCOUNT_API.mail.remove(BOUND_GROUP.id, el.dataset.id); await refreshMail(); toast("Ящик отключён"); }
+      catch (e) { toast(e.message || "Не удалось отключить ящик", "info"); }
+    },
+    mailDismiss: async el => {
+      if (!BOUND_GROUP) return;
+      try { await ACCOUNT_API.mail.dismiss(BOUND_GROUP.id, el.dataset.id); MAIL_STATE.items = MAIL_STATE.items.filter(x => x.id !== el.dataset.id); render(true); }
+      catch (e) { toast(e.message || "Не удалось отклонить письмо", "info"); }
+    },
+    mailCreate: async el => {
+      if (!BOUND_GROUP || el.disabled) return;
+      const item = MAIL_STATE.items.find(x => x.id === el.dataset.id); if (!item) return;
+      el.disabled = true;
+      const s = item.suggestion || {}, due = parseISO(s.due), type = s.kind === "work" ? "works" : s.kind === "exam" && due ? "exams" : s.kind === "event" && due ? "events" : "tasks";
+      const list = DB[type], old = list.find(x => x.source_mail === item.id), id = old?.id || `mail-${item.id}`;
+      if (!old) {
+        const title = s.title || item.mail.subject || "Письмо преподавателя";
+        if (type === "works") list.push({ id, title, subject: s.subject || "", due: due ? s.due : "", done: {}, created: Date.now(), source_mail: item.id });
+        else if (type === "exams") list.push({ id, subject: s.subject || title, kind: "экзамен", date: s.due, time: "", room: "", teacher: s.teacher_name || "", note: title, source_mail: item.id });
+        else if (type === "events") list.push({ id, title, kind: "другое", date: s.due, time: "", place: "", text: item.mail.text || "", going: [], source_mail: item.id });
+        else list.push({ id, kind: "other", title, subject: s.subject || "", due: due ? s.due : "", text: item.mail.text || "", done: false, created: Math.floor(Date.now() / 1000), source_mail: item.id });
+        persist();
+      }
+      try { await ACCOUNT_API.mail.accept(BOUND_GROUP.id, item.id, type, id); MAIL_STATE.items = MAIL_STATE.items.filter(x => x.id !== item.id); render(true); toast("Добавлено из письма"); }
+      catch (e) { el.disabled = false; toast("Запись сохранена. Откройте письмо ещё раз, чтобы подтвердить", "info"); }
     },
     closeSheet: closeSheet,
     form: el => openSheet(FORMS[el.dataset.f](el.dataset.id)),
@@ -3048,18 +3193,18 @@
       title: "Как пользоваться", back: "#settings", nav: "settings",
       html: `<section class="hero"><h1>Помощник старосты.<span> Как начать.</span></h1></section>
         <section class="card stack">
-          ${step(1, "Загрузите расписание", "«Настройки» → «Расписание НГТУ» → номер группы, например 26-ИВТ-2-1. Пары, аудитории, преподаватели и звонки подтянутся с сайта НГТУ, а дальше приложение само раз в день проверяет изменения.")}
+          ${step(1, "Добавьте расписание", nntuAvailable() ? "«Настройки» → «Расписание НГТУ» → номер группы, например 26-ИВТ-2-1. Пары и преподаватели подтянутся с сайта вуза." : "Откройте «Журнал» и добавьте пары кнопкой «+». Период занятий и звонки настраиваются отдельно.")}
           ${step(2, "Добавьте группу", "«Группа» → «Добавить списком»: вставьте список из чата или выберите файл Excel. Подгруппы — «Подгруппы» → «Задать списками».")}
           ${step(3, "Отмечайте на паре", "На главной — кнопка «Отметить посещаемость». Нажатие на студента: + был → Н не был → У уважительная. «Копировать» — список отсутствующих для чата.")}
           ${step(4, "Ведите остальное", "«Дела»: дедлайны, сдачи работ (кто сдал лабораторную), сборы денег и документов, сессия. В карточке студента — день рождения и больничные.")}
-          ${step(5, "Сохраняйте копию", "Данные хранятся только в этом браузере. «Настройки» → «Скачать копию» — раз в пару недель, на случай если браузер очистят.")}
+          ${step(5, "Сохраняйте копию", BOUND_GROUP ? "Аккаунт синхронизирует данные группы с локальным сервером. Дополнительно скачивайте копию в настройках." : "Данные хранятся только в этом браузере. «Настройки» → «Скачать копию» — на случай, если браузер очистят.")}
         </section>
         ${sectionHead("", "Полезно знать")}
         <section class="card stack" style="font-size:14px">
           <p>${ic("chat")} <b>Тексты для чата:</b> расписание дня («Пары» → ${ic("chat")}), изменения с сайта НГТУ, должники по сдачам и сборам, поздравления с днём рождения.</p>
           <p>${ic("download")} <b>Установка:</b> «Настройки» → «Установить». С иконки работает без интернета, долгое нажатие — быстрые действия: «Отметить пару», «Расписание», «Сдачи».</p>
           <p>${ic("lock")} <b>Код-пароль:</b> в настройках можно включить, чтобы чужой не увидел телефоны и дни рождения одногруппников.</p>
-          <p>${ic("info")} Приложение неофициальное. Расписание берётся с открытого сайта НГТУ, данные группы никуда не отправляются.</p>
+          <p>${ic("info")} Приложение неофициальное. ${BOUND_GROUP ? "Данные выбранной группы синхронизируются с локальным сервером аккаунта." : "Без аккаунта данные группы остаются в этом браузере."}</p>
         </section>`,
     };
   };
@@ -3074,6 +3219,6 @@
   const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
   if (DB && pinSet()) LOCKED = true;
-  fontsReady.then(() => { render(); if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); } });
-  addEventListener("online", () => autoCheck());
+  fontsReady.then(async () => { await restoreAccount(); render(); if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); } });
+  addEventListener("online", () => { autoCheck(); if (SYNC) SYNC.pull().catch(() => {}); });
 })();
