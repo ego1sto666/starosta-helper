@@ -1016,12 +1016,14 @@
     const bubble = `<b class="trend__val${X(last) > 80 ? " is-end" : ""}" style="left:${X(last)}%;bottom:${Y(ps[last])}%;--c:${pctColor(ps[last])};--k:${pctInk(ps[last])}">${ps[last]}%</b>`;
     const lo2 = Math.min(...ps), hi2 = Math.max(...ps);
     return `<div class="trend" role="img" aria-label="Посещаемость по неделям: от ${lo2} до ${hi2} процентов, последняя неделя ${ps[last]} процентов">
+      <div class="trend__summary"><div><small>Последняя неделя</small><strong style="color:${pctInk(ps[last])}">${ps[last]}%</strong></div>
+        <span class="trend__delta${dlt < 0 ? " is-down" : ""}">${dlt > 0 ? "+" : ""}${dlt} п.п. к прошлой</span></div>
       <div class="trend__plot">${rules}
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--primary);stop-opacity:.26"/><stop offset="1" style="stop-color:var(--primary);stop-opacity:0"/></linearGradient></defs>
           <path d="${area}" fill="url(#${id})"/>${cmp ? `<path class="trend__cmp" d="${path(cs)}"/>` : ""}<path class="trend__line" d="${line}"/></svg>
         ${pts}${bubble}</div>
-      <div class="trend__x" aria-hidden="true">${labels}</div></div>
-      <p class="hint trend__hint">Последняя неделя — <b style="color:${pctInk(ps[last])}">${ps[last]}%</b>${dlt ? `, ${dlt > 0 ? "↑" : "↓"} ${Math.abs(dlt)} п.п. к предыдущей` : ", как на предыдущей"}.${cmp ? ` <span class="trend__cmp-key"></span> — в среднем по группе.` : ""}</p>`;
+      <div class="trend__x" aria-hidden="true">${labels}</div>
+      ${cmp ? `<p class="trend__legend"><span class="trend__cmp-key"></span>Среднее по группе</p>` : ""}</div>`;
   }
   // когда пропускают: дни недели × номер пары
   function slotHeat(bySlot) {
@@ -1031,7 +1033,7 @@
     const nums = [...new Set(ks.map(k => +k.split("|")[1]))].sort((a, b) => a - b);
     const of = f => ks.filter(f).flatMap(k => bySlot[k]);
     const cell = (ms, cls = "") => { const p = ms && ms.length ? attendancePct(ms) : null;
-      return p == null ? `<td class="heat__none${cls}">—</td>` : `<td class="${cls.trim()}" style="--c:${pctColor(p)};--k:${pctInk(p)}" title="${p}% · ${ms.length} ${plural(ms.length, ["отметка", "отметки", "отметок"])}">${p}</td>`; };
+      return p == null ? `<td class="heat__none${cls}">—</td>` : `<td class="${cls.trim()}" style="--c:${pctColor(p)};--k:${pctInk(p)};--p:${p}%" title="${p}% · ${ms.length} ${plural(ms.length, ["отметка", "отметки", "отметок"])}">${p}</td>`; };
     let worst = null;
     ks.forEach(k => { const ms = bySlot[k], p = attendancePct(ms); if (p != null && ms.length >= 5 && (!worst || p < worst.p)) worst = { k, p }; });
     const wn = worst && worst.p < 85 ? `Ниже всего — ${WD[+worst.k.split("|")[0]].toLowerCase()}, ${worst.k.split("|")[1]} пара: <b style="color:${pctInk(worst.p)}">${worst.p}%</b>.` : "Провалов нет — по всем дням и парам от 85 %.";
@@ -1039,7 +1041,7 @@
       <thead><tr><th></th>${nums.map(n => `<th scope="col">${n}<small> пара</small></th>`).join("")}<th scope="col" class="heat__sumh">день</th></tr></thead>
       <tbody>${days.map(dw => `<tr><th scope="row">${WDS[dw]}</th>${nums.map(n => cell(bySlot[`${dw}|${n}`])).join("")}${cell(of(k => +k.split("|")[0] === dw), " heat__sum")}</tr>`).join("")}</tbody>
       <tfoot><tr><th scope="row">все</th>${nums.map(n => cell(of(k => +k.split("|")[1] === n), " heat__sum")).join("")}<td class="heat__blank"></td></tr></tfoot></table></div>
-      <p class="hint" style="text-align:left;margin-top:8px">${wn} Цифры — процент посещаемости.</p>`;
+      <p class="heat__insight">${wn} Цифры — процент посещаемости.</p>`;
   }
 
   SCREENS.stats = () => {
@@ -1055,7 +1057,7 @@
     const heat = slotHeat(st.bySlot), weeks = Object.keys(st.byWeek).length >= 2;
     return { ...head, html: `
       ${periodTabs("statsPeriod")}${filter}
-      <div class="grid grid--cols2">
+      <div class="grid grid--cols2 stats-grid">
         <section class="card"><div class="card__head">${ic("chart")}<h3>Посещаемость</h3></div>
           <div class="summary">${donut([{ v: st.here, c: "var(--here)" }, { v: st.abs, c: "var(--absent)" }, { v: st.exc, c: "var(--excused)" }], 126, 18, `<b style="color:${pctInk(P)}">${P}%</b><small>посещаемость</small>`, `Посещаемость ${P} процентов`)}
           <div class="legend"><div><i style="--c:var(--here)"></i>Были<b>${st.here}</b></div><div><i style="--c:var(--absent)"></i>Не были<b>${st.abs}</b></div><div><i style="--c:var(--excused)"></i>Уважительная<b>${st.exc}</b></div>
@@ -1830,14 +1832,13 @@
   function renderNav(active) {
     const badges = navBadges(), head = DB && !LOCKED && DB.students.find(s => s.role === "head");
     nav.innerHTML = `<a class="nav__brand" href="#home" title="Помощник старосты"><span class="brand__logo">${ic("school")}</span>
-        <span class="nav__brand-text"><b>Помощник старосты</b><small>${esc(DB && !LOCKED ? groupName() : "НГТУ")}</small></span></a>
+        <span class="nav__brand-text"><b>Староста</b><small>${esc(DB && !LOCKED ? groupName() : "НГТУ")}</small></span></a>
       <div class="nav__items">` +
       NAV.map(([id, n, i]) => { const [cnt, hint] = badges[id] || [];
-        return `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""} title="${n}${cnt ? ` — ${hint}` : ""}">${ic(i)}<span>${n}</span>${cnt ? `<em class="nav__badge" aria-label="${hint}">${cnt > 9 ? "9+" : cnt}</em>` : ""}</a>`; }).join("") +
+        return `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""} title="${n}${cnt ? ` — ${hint}` : ""}"><span class="nav__icon">${ic(i)}</span><span class="nav__label">${n}</span>${cnt ? `<em class="nav__badge" aria-label="${hint}">${cnt > 9 ? "9+" : cnt}</em>` : ""}</a>`; }).join("") +
       `</div>${navNow()}
       <div class="nav__foot">${head ? `<a class="nav__me" href="#student/${esc(head.id)}" title="${esc(head.name)}">${avatar(head)}<span class="nav__me-text"><b>${esc(shortName(head.name))}</b><small>Староста</small></span></a>` : ""}
-        <button class="nav__item nav__item--theme" type="button" data-act="themeQuick" aria-label="Сменить тему" title="Светлая / тёмная">${ic(isDark() ? "sun" : "moon")}<span>Тема</span></button>
-        <a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""} title="Настройки">${ic("cog")}<span>Настройки</span></a></div>`;
+        <a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""} title="Настройки"><span class="nav__icon">${ic("cog")}</span><span class="nav__label">Настройки</span></a></div>`;
   }
   function renderTopbar(scr) {
     const acts = (scr.actions || []).map(([i, label, act, arg, arg2]) => act === "go"
@@ -1846,8 +1847,7 @@
     if (scr.home) {
       topbar.className = "topbar topbar--home";
       topbar.innerHTML = `<div class="topbar__context"><span>Группа</span><b class="ellipsis">${esc(DB.settings.group || "Новая группа")}</b></div>
-        <div class="topbar__actions"><button class="icon-btn" data-act="themeQuick" aria-label="Сменить тему" title="Светлая / тёмная">${ic(isDark() ? "sun" : "moon")}</button>
-        <a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a></div>`;
+        <div class="topbar__actions"><a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a></div>`;
     } else {
       topbar.className = "topbar";
       topbar.innerHTML = `${scr.back ? `<a class="icon-btn back" href="${scr.back}" aria-label="Назад" title="Назад (Esc)">${ic("back")}</a>` : "<span></span>"}
@@ -2784,7 +2784,6 @@
       const on = s.role === "deputy"; el.dataset.s = on ? "+" : "-"; el.querySelector(".mark__chip").innerHTML = on ? ic("tick") : "—"; render(true);
     },
     theme: el => { setTheme(el.dataset.t); render(true); },
-    themeQuick: () => { setTheme(isDark() ? "mint" : "dark"); render(true); },
     install: () => { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; } else toast("Откройте меню браузера → «Установить приложение» или «Добавить на главный экран»", "info"); },
     exportJson: () => {
       const g = (DB.settings.nntu_group || DB.settings.group || "").replace(/[^\wа-яё-]+/gi, "_");

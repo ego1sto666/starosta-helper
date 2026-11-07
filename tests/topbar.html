@@ -25,23 +25,27 @@ async function run() {
     await wait(100);
     check(w.scrollY > 6 && !bar.classList.contains("is-stuck"), `${width}px: нет наложения при прокрутке`);
     if (width < 900) check(bar.getBoundingClientRect().bottom <= 0, `${width}px: шапка уходит вместе со страницей`);
-    const themeButton = width >= 900 ? d.querySelector('#nav [data-act="themeQuick"]') : bar.querySelector('[data-act="themeQuick"]');
-    check(!!themeButton, `${width}px: переключатель темы доступен`);
-    themeButton.click();
-    await wait(100);
-    check(d.documentElement.dataset.theme === "dark", `${width}px: тема переключается`);
+    check(!d.querySelector('[data-act="themeQuick"]'), `${width}px: быстрых переключателей темы нет`);
     check(!/Добрый|Доброе/.test(bar.textContent), `${width}px: в шапке нет лишнего приветствия`);
     check(d.querySelector(".home-top .hero h1")?.textContent === "Сегодня", `${width}px: заголовок описывает экран`);
     if (width >= 900) {
       const nav = d.querySelector("#nav"), rail = nav.getBoundingClientRect();
-      check(rail.left === 0 && Math.round(rail.width) === (width >= 1100 ? 224 : 96), `${width}px: боковая панель встроена в страницу`);
+      check(rail.left === 0 && Math.round(rail.width) === (width >= 1100 ? 244 : 96), `${width}px: боковая панель встроена в страницу`);
       check(getComputedStyle(nav.querySelector(".nav__brand-text")).display === (width >= 1100 ? "block" : "none"), `${width}px: подпись меню соответствует ширине экрана`);
     }
+    w.location.hash = "#settings";
+    for (let i = 0; i < 30 && !d.querySelector('.theme-card[data-t="dark"]'); i++) await wait(100);
+    const themeButton = d.querySelector('.theme-card[data-t="dark"]');
+    check(!!themeButton, `${width}px: тема доступна в настройках`);
+    themeButton?.click();
+    await wait(100);
+    check(d.documentElement.dataset.theme === "dark", `${width}px: тема переключается в настройках`);
     w.location.hash = "#journal";
     for (let i = 0; i < 30 && bar.classList.contains("topbar--home"); i++) await wait(100);
+    await wait(500);
     d.querySelector("#view").style.minHeight = "1800px";
     w.scrollTo(0, 320);
-    await wait(100);
+    await wait(250);
     check(getComputedStyle(bar).position === "sticky" && bar.classList.contains("is-stuck") && bar.getBoundingClientRect().top === 0,
       `${width}px: рабочая шапка журнала закрепляется`);
     check(getComputedStyle(bar).backgroundColor === getComputedStyle(d.body).backgroundColor,
