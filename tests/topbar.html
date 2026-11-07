@@ -6,7 +6,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 function check(ok, label) { report.push((ok ? "OK " : "FAIL ") + label); if (!ok) errors.push(label); }
 async function run() {
   const fixture = await (await fetch("/__t/fixtures/demo.json")).json();
-  for (const width of [390, 1100]) {
+  for (const width of [390, 1000, 1100]) {
     const frame = document.querySelector("#app");
     frame.style.width = width + "px";
     frame.src = "/index.html?topbar=" + width + "#home";
@@ -29,8 +29,15 @@ async function run() {
     bar.querySelector('[data-act="themeQuick"]').click();
     await wait(100);
     check(bar.classList.contains("is-stuck") && solid(), `${width}px: шапка остаётся плотной после смены темы`);
-    const title = bar.querySelector(".brand__text").getBoundingClientRect(), bounds = bar.getBoundingClientRect();
-    check(title.top >= bounds.top && title.bottom <= bounds.bottom, `${width}px: приветствие внутри шапки`);
+    const title = bar.querySelector(".topbar__context").getBoundingClientRect(), bounds = bar.getBoundingClientRect();
+    check(title.top >= bounds.top && title.bottom <= bounds.bottom, `${width}px: название группы внутри шапки`);
+    check(!/Добрый|Доброе/.test(bar.textContent), `${width}px: в шапке нет лишнего приветствия`);
+    check(d.querySelector(".home-top .hero h1")?.textContent === "Сегодня", `${width}px: заголовок описывает экран`);
+    if (width >= 900) {
+      const nav = d.querySelector("#nav"), rail = nav.getBoundingClientRect();
+      check(rail.left === 0 && Math.round(rail.width) === (width >= 1100 ? 224 : 96), `${width}px: боковая панель встроена в страницу`);
+      check(getComputedStyle(nav.querySelector(".nav__brand-text")).display === (width >= 1100 ? "block" : "none"), `${width}px: подпись меню соответствует ширине экрана`);
+    }
   }
   report.push("ERRORS: " + (errors.length ? errors.join(" | ") : "нет"));
 }

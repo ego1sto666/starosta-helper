@@ -707,7 +707,7 @@
     return {
       home: true, nav: "home", fab: "quick",
       html: `
-        <div class="home-top"><section class="hero"><h1>Сегодня.<span> Что по плану?</span></h1>
+        <div class="home-top"><section class="hero"><h1>Сегодня</h1>
           <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p></section>${nowCard}</div>
         ${notices ? `<div class="stack">${notices}</div>` : ""}
         ${tiles ? `<div class="tiles">${tiles}</div>` : ""}
@@ -1843,9 +1843,8 @@
       ? `<a class="icon-btn" href="${arg}" aria-label="${label}" title="${label}">${ic(i)}</a>`
       : `<button class="icon-btn" data-act="${act}" data-f="${esc(arg || "")}" data-id="${esc(arg2 || "")}" aria-label="${label}" title="${label}">${ic(i)}</button>`).join("");
     if (scr.home) {
-      const h = NOW.getHours(), hi = h >= 5 && h < 12 ? "Доброе утро" : h >= 12 && h < 17 ? "Добрый день" : h >= 17 && h < 23 ? "Добрый вечер" : "Доброй ночи";
       topbar.className = "topbar topbar--home";
-      topbar.innerHTML = `<div class="brand"><span class="brand__logo">${ic("school")}</span><div class="brand__text"><small>${esc(DB.settings.group || "Помощник старосты")}</small><b>${hi}</b></div></div>
+      topbar.innerHTML = `<div class="topbar__context"><span>Группа</span><b class="ellipsis">${esc(DB.settings.group || "Новая группа")}</b></div>
         <div class="topbar__actions"><button class="icon-btn" data-act="themeQuick" aria-label="Сменить тему" title="Светлая / тёмная">${ic(isDark() ? "sun" : "moon")}</button>
         <a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a></div>`;
     } else {
