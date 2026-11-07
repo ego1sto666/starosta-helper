@@ -1,12 +1,12 @@
-/* Клиент сервера «Помощника старосты» — ЧЕРНОВИК. В index.html пока НЕ подключён.
+/* Клиент сервера «Помощника старосты» — ЧЕРНОВИК. Подключён к странице, но без STAROSTA_API запросы не выполняются.
 
    Как будет работать (server/design/sync.md):
    • без аккаунта — всё как сейчас: данные только в этом браузере (StarostaAPI.enabled() === false);
    • с аккаунтом — те же данные (data.json) хранятся ещё и на сервере, приложение синхронизирует их
      с другими устройствами и замом; письма преподавателей приходят на экран «Почта».
 
-   Подключение (шаг 3–4 в ROADMAP.md): <script>window.STAROSTA_API = "/api"</script> и <script src="js/api.js">
-   перед js/app.js. Вход хранится в cookie (httpOnly), токенов в localStorage нет. */
+   Подключение сервера (шаг 3–4 в ROADMAP.md): до этого файла задать window.STAROSTA_API = "/api".
+   Вход хранится в cookie (httpOnly), токенов в localStorage нет. */
 (() => {
   "use strict";
   const BASE = window.STAROSTA_API || "";

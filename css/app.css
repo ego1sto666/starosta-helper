@@ -586,6 +586,32 @@ a { color: inherit; text-decoration: none; }
 .setting__body b { font-weight: var(--fw-medium); display: block; }
 .setting__body span { font-size: var(--fs-meta); color: var(--muted-ink); }
 
+/* Аккаунт: отдельный спокойный экран; локальная группа остаётся доступной без входа. */
+.account { width: min(100%, 470px); margin: 0 auto; padding: clamp(18px, 5vw, 42px) 0 56px; }
+.account__back { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--muted-ink); font-size: 14px; }
+.account__back:hover { color: var(--text); }
+.account__brand { display: grid; justify-items: center; text-align: center; gap: 8px; padding: 20px 0 28px; }
+.account__brand .brand__logo { width: 52px; height: 52px; border-radius: 16px; font-size: 26px; margin-bottom: 8px; }
+.account__brand h1 { font-size: clamp(24px, 6vw, 30px); font-weight: var(--fw-bold); letter-spacing: var(--tracking-tight); line-height: 1.15; }
+.account__brand p, .account__foot { color: var(--muted-ink); font-size: 14px; line-height: 1.5; }
+.account__card { padding: 20px; }
+.account__tabs { margin-bottom: 20px; }
+.account__tabs a { flex: 1; display: grid; place-items: center; min-height: 40px; border-radius: 11px; color: var(--muted-ink); font-size: 14px; }
+.account__tabs a[aria-current="page"] { background: var(--seg-thumb); color: var(--text); font-weight: var(--fw-bold); box-shadow: var(--shadow-card); }
+.account__tabs a:focus-visible, .account__back:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: 2px; }
+.account__form { display: grid; gap: 14px; }
+.account__form .field { margin: 0; }
+.account__help { margin-top: -8px; color: var(--muted-ink); font-size: 12px; line-height: 1.4; }
+.account__note { padding: 12px 14px; border-radius: 12px; background: var(--field); color: var(--muted-ink); font-size: 13px; line-height: 1.45; margin-bottom: 16px; }
+.account__consent { display: flex; align-items: flex-start; gap: 10px; color: var(--muted-ink); font-size: 13px; line-height: 1.45; }
+.account__consent input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--primary-ink); }
+.account__consent a { color: var(--primary-ink); text-decoration: underline; text-underline-offset: 2px; }
+.account__form .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.account__person { display: grid; gap: 3px; margin-bottom: 16px; overflow-wrap: anywhere; }
+.account__person b { font-size: 20px; }
+.account__person span { color: var(--muted-ink); font-size: 14px; }
+.account__foot { text-align: center; padding: 16px 12px 0; }
+
 /* ---------- пустое состояние, скелетоны ---------- */
 .empty { text-align: center; padding: 34px 20px; display: grid; justify-items: center; gap: 10px; }
 .empty .ic { width: 76px; height: 76px; border-radius: 26px; display: grid; place-items: center; font-size: 38px; margin-bottom: 4px;

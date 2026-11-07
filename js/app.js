@@ -1409,6 +1409,7 @@
           <div class="stack">
             ${sectionHead("download", "Данные. Только на этом устройстве")}
             <section class="card" style="padding:4px 14px">
+              ${row("Аккаунт старосты", "Регистрация и вход для будущей синхронизации. Сейчас данные группы остаются на этом устройстве.", `<a class="btn btn--soft btn--sm" href="#account">${ic("lock")}Открыть</a>`)}
               ${row("Где хранятся", "Только в этом браузере на этом устройстве. Ни сайт, ни НГТУ их не видят.")}
               ${row("Скачать копию", lastBackup ? `Последняя — ${fmtDate(new Date(lastBackup))}` : "Ещё ни разу — стоит сделать", `<button class="btn btn--${needBackup() ? "primary" : "soft"} btn--sm" data-act="exportJson">${ic("download")}Скачать</button>`)}
               ${row("Загрузить из файла", "Заменить данные этого браузера копией или data.json из программы на ПК", `<button class="btn btn--neutral btn--sm" data-act="importJson">Выбрать файл</button>`)}
@@ -1428,6 +1429,46 @@
           </div>
         </div>`,
     };
+  };
+
+  /* ----- аккаунт: экран готов к API; локальные данные пока не синхронизируются ----- */
+  const ACCOUNT_API = window.StarostaAPI;
+  let ACCOUNT = null, ACCOUNT_CHECKED = false;
+  const accountReady = () => !!(ACCOUNT_API && ACCOUNT_API.enabled());
+  const privacyUrl = () => {
+    const url = window.STAROSTA_PRIVACY_URL || "";
+    return /^(https:\/\/|\/(?!\/))/.test(url) ? url : "";
+  };
+  SCREENS.account = mode => {
+    if (accountReady() && !ACCOUNT_CHECKED) {
+      ACCOUNT_CHECKED = true;
+      ACCOUNT_API.auth.me().then(u => { ACCOUNT = u; if (location.hash.startsWith("#account")) render(true); }).catch(() => {});
+    }
+    const register = mode === "register", ready = accountReady(), policy = privacyUrl();
+    const note = !ready ? `<p class="account__note" role="status">Сервер пока не подключён. Регистрация и вход станут доступны после настройки онлайн-версии.</p>`
+      : register && !policy ? `<p class="account__note" role="status">Для регистрации нужно опубликовать политику обработки данных.</p>` : "";
+    return { title: register ? "Регистрация" : "Аккаунт", nav: "account", welcome: true,
+      html: `<div class="account"><a class="account__back" href="${DB ? "#settings" : "#home"}">${ic("back")}Назад к приложению</a>
+        <div class="account__brand"><span class="brand__logo">${ic("school")}</span><h1>${ACCOUNT ? "Ваш аккаунт" : register ? "Создать аккаунт" : "Вход для старосты"}</h1>
+          <p>${ACCOUNT ? "Аккаунт подготовлен для будущей синхронизации." : "Сейчас записи группы сохраняются только в этом браузере."}</p></div>
+        <section class="card account__card">${ACCOUNT ? `<div class="account__person"><b>${esc(ACCOUNT.name || ACCOUNT.login)}</b><span>${esc(ACCOUNT.email || ACCOUNT.login)}</span></div>
+            <p class="account__note">Вы вошли в аккаунт. Данные группы пока не переносятся на сервер и не появятся на другом устройстве.</p>
+            <button class="btn btn--neutral btn--block" data-act="accountLogout">Выйти из аккаунта</button>`
+          : `<div class="seg seg--fit account__tabs" role="navigation" aria-label="Аккаунт"><a href="#account"${!register ? ' aria-current="page"' : ""}>Вход</a><a href="#account/register"${register ? ' aria-current="page"' : ""}>Регистрация</a></div>
+            ${note}<form data-auth="${register ? "register" : "login"}" class="account__form">
+              ${register ? `<div class="field"><label for="account-name">Как к вам обращаться</label><input id="account-name" name="name" autocomplete="name" maxlength="120" placeholder="Имя"></div>
+                <div class="field"><label for="account-login">Логин</label><input id="account-login" name="login" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,31}" autocapitalize="none" autocomplete="username" placeholder="starosta.ivt"></div>
+                <p class="account__help">3–32 символа: латиница, цифры, точка, дефис или подчёркивание.</p>
+                <div class="field"><label for="account-email">Почта</label><input id="account-email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="name@example.ru"></div>`
+              : `<div class="field"><label for="account-login">Логин или почта</label><input id="account-login" name="login" required autocomplete="username" autocapitalize="none" placeholder="starosta.ivt"></div>`}
+              <div class="field"><label for="account-password">Пароль</label><input id="account-password" name="password" type="password" required minlength="8" maxlength="200" autocomplete="${register ? "new-password" : "current-password"}"></div>
+              ${register ? `<div class="field"><label for="account-confirm">Повторите пароль</label><input id="account-confirm" name="confirm" type="password" required minlength="8" maxlength="200" autocomplete="new-password"></div>
+                <p class="account__help">Не меньше 8 символов, с буквами и цифрами. Пароль не должен содержать логин.</p>
+                <label class="account__consent"><input name="consent" type="checkbox" required><span>Согласен на обработку данных по ${policy ? `<a href="${esc(policy)}" target="_blank" rel="noopener">политике конфиденциальности</a>` : "политике конфиденциальности"}.</span></label>` : ""}
+              ${formErr}<button class="btn btn--primary btn--block btn--lg"${!ready || (register && !policy) ? " disabled" : ""}>${register ? "Создать аккаунт" : "Войти"}</button>
+            </form>`}</section>
+        <p class="account__foot">Вход в аккаунт не переносит записи группы. Перенос данных и доступ заместителя — следующий этап.</p>
+      </div>` };
   };
 
   /* ----- пример для гостей ----- */
@@ -1493,6 +1534,7 @@
           <p class="muted" style="font-size:14px;margin-bottom:12px">Загрузите копию данных (файл .json). Данные программы на ПК лежат в <b class="num">%APPDATA%\\starosta\\data.json</b> — вставьте этот путь в окно выбора файла.</p>
           <button class="btn btn--soft btn--block" data-act="importJson">Выбрать файл</button>
         </section>
+        <a class="link welcome__skip" href="#account">Аккаунт старосты: вход и регистрация</a>
         <button class="link welcome__skip" data-act="startEmpty">Начать без расписания</button>
       </div>`,
     };
@@ -1879,7 +1921,7 @@
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");
     if (name !== "mark") MK = null;
-    current = LOCKED ? lockScreen() : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen();
+    current = LOCKED ? lockScreen() : (name === "account" ? SCREENS.account(args[0]) : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen());
     renderTopbar(current); renderNav(current.nav || name);
     view.innerHTML = (isDemo() && !LOCKED && !current.focus ? demoStrip() : "") + current.html;
     app.classList.toggle("is-focus", !!current.focus);
@@ -2286,6 +2328,32 @@
         <p class="hint" style="text-align:left;margin:4px 0 12px">Пустые строки не сохраняются. При загрузке расписания НГТУ звонки обновятся сами.</p>${formBtns()}</form>`; },
   };
 
+  document.addEventListener("submit", async e => {
+    const f = e.target.closest("form[data-auth]"); if (!f) return;
+    e.preventDefault();
+    const err = f.querySelector(".form-err"), button = f.querySelector('button[type="submit"], button:last-child');
+    const fail = message => { err.textContent = message; err.hidden = false; };
+    err.hidden = true;
+    if (!accountReady()) return fail("Сервер аккаунтов пока не подключён");
+    const v = Object.fromEntries(new FormData(f)), register = f.dataset.auth === "register";
+    if (register) {
+      if (!privacyUrl()) return fail("Для регистрации нужна опубликованная политика обработки данных");
+      if (v.password !== v.confirm) return fail("Пароли не совпадают");
+      if (!/[A-Za-zА-Яа-яЁё]/.test(v.password) || !/\d/.test(v.password)) return fail("Добавьте в пароль и буквы, и цифры");
+      if (v.password.toLowerCase().includes(v.login.trim().toLowerCase())) return fail("Пароль не должен содержать логин");
+      if (!v.consent) return fail("Подтвердите согласие на обработку данных");
+    }
+    button.disabled = true; f.setAttribute("aria-busy", "true");
+    try {
+      ACCOUNT = register
+        ? await ACCOUNT_API.auth.register({ login: v.login.trim(), email: v.email.trim(), name: v.name.trim(), password: v.password, consent: true })
+        : await ACCOUNT_API.auth.login(v.login.trim(), v.password);
+      ACCOUNT_CHECKED = true;
+      render(true);
+    } catch (x) { fail(x.message || "Не удалось связаться с сервером"); }
+    finally { if (f.isConnected) { button.disabled = false; f.removeAttribute("aria-busy"); } }
+  });
+
   document.addEventListener("submit", e => {
     const f = e.target.closest("[data-form]"); if (!f) return;
     e.preventDefault();
@@ -2519,6 +2587,10 @@
   /* ---------- действия ---------- */
   const confirmed = el => el.dataset.confirmed === "1";
   const ACT = {
+    accountLogout: async () => {
+      try { await ACCOUNT_API.auth.logout(); ACCOUNT = null; ACCOUNT_CHECKED = true; render(true); }
+      catch (e) { toast(e.message || "Не удалось выйти из аккаунта", "info"); }
+    },
     closeSheet: closeSheet,
     form: el => openSheet(FORMS[el.dataset.f](el.dataset.id)),
     pickDate: () => {
