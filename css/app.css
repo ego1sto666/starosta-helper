@@ -531,6 +531,16 @@ a { color: inherit; text-decoration: none; }
 .mini__row:hover { background: var(--field); }
 .mini__row + .mini__row { border-top: 1px solid var(--border); }
 .mini__body { flex: 1; min-width: 0; }
+.miss-months { display: grid; gap: var(--space-2); }
+.miss-month { border: 1px solid var(--line); border-radius: var(--radius-inner); overflow: hidden; }
+.miss-month summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; padding: 10px 12px; list-style: none; cursor: pointer; font-weight: var(--fw-bold); }
+.miss-month summary::-webkit-details-marker { display: none; }
+.miss-month summary:hover { background: var(--field); }
+.miss-month summary:focus-visible { outline: 2px solid var(--primary-ink); outline-offset: -2px; }
+.miss-month__count { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-ink); font-size: var(--fs-meta); font-weight: var(--fw-regular); white-space: nowrap; }
+.miss-month__count .ic { transition: transform var(--dur) var(--ease); }
+.miss-month[open] .miss-month__count .ic { transform: rotate(90deg); }
+.miss-month .mini { border-top: 1px solid var(--line); padding: 0 8px; }
 .mini__title { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini__sub { font-size: 12.5px; color: var(--muted-ink); }
 .card__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }

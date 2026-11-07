@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>Пропуски по месяцам</title>
+<iframe id="app" style="width:390px;height:850px;border:0"></iframe>
+<script>
+const report = [], errors = [];
+function check(ok, text) { report.push(`${ok ? "OK" : "FAIL"} ${text}`); if (!ok) errors.push(text); }
+const wait = ms => new Promise(r => setTimeout(r, ms));
+async function run() {
+  const data = await (await fetch('/__t/fixtures/demo.json')).json();
+  const sid = data.students[0].id, l = data.lessons[0];
+  for (const month of ['09', '10']) for (let day = 1; day <= 13; day++) {
+    const date = `2026-${month}-${String(day).padStart(2, '0')}`;
+    data.attendance[`${date}|${l.id}`] = { subject: l.subject, num: l.num, kind: l.kind, marks: { [sid]: day % 4 ? 'н' : 'у' } };
+  }
+  localStorage.setItem('starosta.data', JSON.stringify(data));
+  const frame = document.querySelector('#app');
+  frame.src = `/index.html#student/${sid}`;
+  await new Promise(r => frame.onload = r);
+  const doc = frame.contentDocument;
+  for (let i = 0; i < 50 && !doc.querySelector('.miss-month'); i++) await wait(100);
+  const months = [...doc.querySelectorAll('.miss-month')];
+  const rows = doc.querySelectorAll('.miss-month .mini__row');
+  const count = +doc.querySelector('.miss-months')?.closest('.card')?.querySelector('.pill')?.textContent;
+  check(months.length >= 2, 'несколько месяцев показаны отдельно');
+  check(months[0]?.open && !months[1]?.open, 'открыт только последний месяц');
+  check(rows.length === count && rows.length > 20, 'все пропуски доступны без ограничения 20 записей');
+  months[1]?.querySelector('summary')?.click();
+  check(months[1]?.open, 'старый месяц раскрывается');
+  check(months[0]?.textContent.includes('Октябрь') || months[0]?.textContent.includes('Ноябрь'), 'новый месяц идёт первым');
+  report.push('ERRORS: ' + (errors.length ? errors.join(' | ') : 'нет'));
+}
+run().catch(e => report.push('FAIL ' + e.message, 'ERRORS: ' + e.message))
+  .finally(() => fetch('/__save/result-misses.txt', { method: 'POST', body: report.join('\n') }));
+</script>

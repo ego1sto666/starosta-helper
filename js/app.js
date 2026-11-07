@@ -1167,6 +1167,8 @@
     S.studentPeriod ||= "term";
     const recs = periodRecords(S.studentPeriod), st = collectStats(recs, s.id), all = collectStats(recs);
     const P = st.pct, avg = all.pct, misses = st.misses.sort((a, b) => b.d - a.d), p = parseBday(s.birthday);
+    const missMonths = new Map();
+    misses.forEach(x => { const m = key(x.d).slice(0, 7); if (!missMonths.has(m)) missMonths.set(m, []); missMonths.get(m).push(x); });
     const roleTxt = s.role === "head" ? " · староста" : s.role === "deputy" ? " · зам. старосты" : "";
     const nb = p && nextBday(p), nn = nb && daysBetween(TODAY, nb), age = nb && bdayAge(s.birthday, nb);
     const bday = p ? `<span${nn <= BDAY_AHEAD ? ' style="color:var(--primary-ink);font-weight:var(--fw-bold)"' : ""}>${ic("cake")} ${p[0]} ${MONTHS[p[1] - 1]}${nn === 0 ? " — сегодня!" : nn <= 30 ? `, ${whenText(nn)}` : ""}${age ? ` · исполнится ${age}` : ""}</span>`
@@ -1198,8 +1200,9 @@
           <section class="card"><div class="card__head">${ic("schedule")}<h3>По предметам</h3></div><p class="hint" style="text-align:left;margin:-4px 0 12px">Засечка — средняя посещаемость группы по предмету.</p><div class="stack" style="gap:16px">${subjRows(st.bySubj, all.bySubj)}</div></section>
           ${heat ? `<section class="card"><div class="card__head">${ic("clock")}<h3>Дни и пары</h3></div>${heat}</section>` : ""}
           <section class="card"><div class="card__head">${ic("alarm")}<h3>Пропуски</h3><span class="pill pill--bad num">${misses.length}</span></div>
-            ${misses.length ? `<div class="mini">${misses.slice(0, 20).map(x => `<a class="mini__row" href="#mark/${esc(x.k.split("|")[1])}/${key(x.d)}"><span class="mark__chip" style="width:36px;height:30px;font-size:14px;background:${x.m === "н" ? "var(--bad)" : "var(--excused)"};color:#fff">${x.m === "н" ? "Н" : "У"}</span><div class="mini__body"><div class="mini__title">${esc(baseSubject(x.r.subject))}</div><div class="mini__sub">${fmtShort(x.d)} · ${x.r.num || "?"} пара</div></div>${ic("right", "muted")}</a>`).join("")}</div>
-              ${misses.length > 20 ? `<p class="hint" style="margin-top:8px">и ещё ${misses.length - 20}</p>` : ""}` : `<p class="muted">Пропусков нет — отлично.</p>`}</section>
+            ${misses.length ? `<div class="miss-months">${[...missMonths].map(([m, rows], i) => `<details class="miss-month"${i === 0 ? " open" : ""}>
+              <summary><span>${MONTHS_NOM[+m.slice(5) - 1]} ${m.slice(0, 4)}</span><span class="miss-month__count">${rows.length} ${plural(rows.length, ["пропуск", "пропуска", "пропусков"])} ${ic("right")}</span></summary>
+              <div class="mini">${rows.map(x => `<a class="mini__row" href="#mark/${esc(x.k.split("|")[1])}/${key(x.d)}"><span class="mark__chip" style="width:36px;height:30px;font-size:14px;background:${x.m === "н" ? "var(--bad)" : "var(--excused)"};color:#fff">${x.m === "н" ? "Н" : "У"}</span><div class="mini__body"><div class="mini__title">${esc(baseSubject(x.r.subject))}</div><div class="mini__sub">${fmtShort(x.d)} · ${x.r.num || "?"} пара</div></div>${ic("right", "muted")}</a>`).join("")}</div></details>`).join("")}</div>` : `<p class="muted">Пропусков нет — отлично.</p>`}</section>
         </div>`}`,
     };
   };
