@@ -1836,6 +1836,7 @@
         return `<a class="nav__item" href="${navHref(id)}"${active === id ? ' aria-current="page"' : ""} title="${n}${cnt ? ` — ${hint}` : ""}">${ic(i)}<span>${n}</span>${cnt ? `<em class="nav__badge" aria-label="${hint}">${cnt > 9 ? "9+" : cnt}</em>` : ""}</a>`; }).join("") +
       `</div>${navNow()}
       <div class="nav__foot">${head ? `<a class="nav__me" href="#student/${esc(head.id)}" title="${esc(head.name)}">${avatar(head)}<span class="nav__me-text"><b>${esc(shortName(head.name))}</b><small>Староста</small></span></a>` : ""}
+        <button class="nav__item nav__item--theme" type="button" data-act="themeQuick" aria-label="Сменить тему" title="Светлая / тёмная">${ic(isDark() ? "sun" : "moon")}<span>Тема</span></button>
         <a class="nav__item nav__item--settings" href="#settings"${active === "settings" ? ' aria-current="page"' : ""} title="Настройки">${ic("cog")}<span>Настройки</span></a></div>`;
   }
   function renderTopbar(scr) {
@@ -1855,7 +1856,7 @@
     }
     syncTopbar();
   }
-  function syncTopbar() { topbar.classList.toggle("is-stuck", window.scrollY > 6); }
+  function syncTopbar() { topbar.classList.toggle("is-stuck", !topbar.classList.contains("topbar--home") && window.scrollY > 6); }
   // #now — быстрое действие с иконки: отметка пары, которая идёт или будет следующей
   function nowRoute() {
     const ls = activeOnly(dayLessons(TODAY)), l = ls.find(x => lessonState(x, TODAY) === "live") || ls.find(x => lessonState(x, TODAY) === "future") || [...ls].reverse().find(x => !DB.attendance[attKey(TODAY, x.id)]);

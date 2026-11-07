@@ -9,28 +9,27 @@ async function run() {
   for (const width of [390, 1000, 1100]) {
     const frame = document.querySelector("#app");
     frame.style.width = width + "px";
+    localStorage.setItem("starosta.data", JSON.stringify(fixture));
+    localStorage.setItem("starosta.theme", JSON.stringify("mint"));
     frame.src = "/index.html?topbar=" + width + "#home";
     await new Promise(resolve => frame.onload = resolve);
     const w = frame.contentWindow;
-    w.localStorage.setItem("starosta.data", JSON.stringify(fixture));
-    w.location.reload();
-    await new Promise(resolve => frame.onload = resolve);
     const d = frame.contentDocument;
     const bar = d.querySelector("#topbar");
-    for (let i = 0; i < 30 && !bar.classList.contains("topbar--home"); i++) await wait(100);
+    for (let i = 0; i < 100 && (!bar.classList.contains("topbar--home") || d.querySelector('[aria-busy="true"]')); i++) await wait(100);
     check(bar.classList.contains("topbar--home"), `${width}px: главная страница загружена`);
     d.querySelector("#view").style.minHeight = "1800px";
-    const solid = () => getComputedStyle(bar).backgroundColor === getComputedStyle(d.body).backgroundColor;
-    check(solid(), `${width}px: шапка непрозрачна до прокрутки`);
+    check(getComputedStyle(bar).position !== "sticky", `${width}px: главная без липкой шапки`);
+    check(getComputedStyle(bar).display === (width >= 900 ? "none" : "grid"), `${width}px: шапка видна только на телефоне`);
     w.scrollTo(0, 320);
     await wait(100);
-    check(w.scrollY > 6 && bar.classList.contains("is-stuck"), `${width}px: шапка закреплена (scrollY=${w.scrollY})`);
-    check(solid(), `${width}px: содержимое не просвечивает под шапкой`);
-    bar.querySelector('[data-act="themeQuick"]').click();
+    check(w.scrollY > 6 && !bar.classList.contains("is-stuck"), `${width}px: нет наложения при прокрутке`);
+    if (width < 900) check(bar.getBoundingClientRect().bottom <= 0, `${width}px: шапка уходит вместе со страницей`);
+    const themeButton = width >= 900 ? d.querySelector('#nav [data-act="themeQuick"]') : bar.querySelector('[data-act="themeQuick"]');
+    check(!!themeButton, `${width}px: переключатель темы доступен`);
+    themeButton.click();
     await wait(100);
-    check(bar.classList.contains("is-stuck") && solid(), `${width}px: шапка остаётся плотной после смены темы`);
-    const title = bar.querySelector(".topbar__context").getBoundingClientRect(), bounds = bar.getBoundingClientRect();
-    check(title.top >= bounds.top && title.bottom <= bounds.bottom, `${width}px: название группы внутри шапки`);
+    check(d.documentElement.dataset.theme === "dark", `${width}px: тема переключается`);
     check(!/Добрый|Доброе/.test(bar.textContent), `${width}px: в шапке нет лишнего приветствия`);
     check(d.querySelector(".home-top .hero h1")?.textContent === "Сегодня", `${width}px: заголовок описывает экран`);
     if (width >= 900) {
@@ -38,6 +37,15 @@ async function run() {
       check(rail.left === 0 && Math.round(rail.width) === (width >= 1100 ? 224 : 96), `${width}px: боковая панель встроена в страницу`);
       check(getComputedStyle(nav.querySelector(".nav__brand-text")).display === (width >= 1100 ? "block" : "none"), `${width}px: подпись меню соответствует ширине экрана`);
     }
+    w.location.hash = "#journal";
+    for (let i = 0; i < 30 && bar.classList.contains("topbar--home"); i++) await wait(100);
+    d.querySelector("#view").style.minHeight = "1800px";
+    w.scrollTo(0, 320);
+    await wait(100);
+    check(getComputedStyle(bar).position === "sticky" && bar.classList.contains("is-stuck") && bar.getBoundingClientRect().top === 0,
+      `${width}px: рабочая шапка журнала закрепляется`);
+    check(getComputedStyle(bar).backgroundColor === getComputedStyle(d.body).backgroundColor,
+      `${width}px: карточки не просвечивают сквозь шапку журнала`);
   }
   report.push("ERRORS: " + (errors.length ? errors.join(" | ") : "нет"));
 }
