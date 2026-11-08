@@ -1,4 +1,5 @@
 """Собрать публичное демо только из разрешённых файлов, без исходников сервера и личных данных."""
+import csv
 import json
 import re
 import shutil
@@ -18,6 +19,7 @@ FILES = [
 
 def main() -> None:
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "dist" / "teacher-preview"
+    roster_csv = Path(sys.argv[2]) if len(sys.argv) > 2 else None
     if target.exists() and any(target.iterdir()):
         raise SystemExit(f"Каталог уже заполнен: {target}")
     data = json.loads((ROOT / "demo/group.json").read_text(encoding="utf-8"))
@@ -30,7 +32,7 @@ def main() -> None:
         raise SystemExit("Имена преподавателей в примере не обезличены")
     if any(l.get("teacher") and not re.fullmatch(r"Преподаватель \d+", l["teacher"]) for l in data.get("lessons", [])):
         raise SystemExit("В расписании примера есть реальные имена преподавателей")
-    # В показе своей группы староста указан по имени; остальные студенты остаются вымышленными.
+    # Без частной выгрузки публикуется только имя старосты; CSV не копируется в сборку.
     leaders = [s for s in data["students"] if s.get("id") == "90a6f10b02"]
     if len(leaders) != 1:
         raise SystemExit("Не найден профиль старосты для публичного примера")
@@ -38,6 +40,16 @@ def main() -> None:
         s["role"] = "head" if s is leaders[0] else ""
     leaders[0]["name"] = "Юнусов Артём"
     data["settings"]["preview_real_leader"] = True
+    if roster_csv:
+        with roster_csv.open(encoding="utf-8-sig", newline="") as f:
+            names = [row[1].strip() for row in csv.reader(f, delimiter=";") if len(row) > 1 and row[0].strip().isdigit()]
+        if (len(names) != len(data["students"]) or len(set(names)) != len(names)
+                or names[7] != "Германскова Екатерина" or names[-1] != "Юнусов Артём"):
+            raise SystemExit("Состав в выгрузке не совпадает с проверенной группой")
+        for s, name in zip(data["students"], names):
+            s["name"] = name
+            s["role"] = "head" if name == "Юнусов Артём" else "deputy" if name == "Германскова Екатерина" else ""
+        data["settings"]["preview_real_roster"] = True
     target.mkdir(parents=True, exist_ok=True)
     for name in FILES:
         source = ROOT / name
@@ -57,7 +69,8 @@ def main() -> None:
     sw = (target / "sw.js").read_text(encoding="utf-8").replace('"privacy.html", ', "")
     (target / "sw.js").write_text(sw, encoding="utf-8")
     (target / ".nojekyll").write_text("", encoding="utf-8")
-    (target / "README.md").write_text("# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\nСтароста — Юнусов Артём. Имена остальных студентов вымышлены. Расписание основано на открытых данных НГТУ, дела, отметки и оценки случайные. Контактов студентов нет. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
+    roster_note = "ФИО 37 студентов взяты из выгрузки состава группы." if roster_csv else "Староста — Юнусов Артём; имена остальных студентов вымышлены."
+    (target / "README.md").write_text(f"# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\n{roster_note} Расписание основано на открытых данных НГТУ. Дела, посещаемость и оценки созданы случайно для показа и не отражают реальные результаты студентов. Контактов студентов нет. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
     print(f"Собрано файлов: {len(FILES) + 3}. Каталог: {target}")
 
 
