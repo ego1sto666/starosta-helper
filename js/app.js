@@ -1575,6 +1575,8 @@
   function demoFill() {
     const R = Math.random, day = n => key(addDays(TODAY, n));
     const ids = students().map(s => s.id), some = share => ids.filter(() => R() < share);
+    if (DB.students[0]) DB.students[0].role = "head";
+    if (DB.students[1]) DB.students[1].role = "deputy";
     // у каждого своя привычка: большинство ходит почти всегда, несколько человек — с пропусками
     const habit = Object.fromEntries(ids.map(id => [id, R() < 0.1 ? 0.6 + R() * 0.15 : 0.86 + R() * 0.13]));
     const { start, end } = term();
@@ -1589,18 +1591,31 @@
     DB.tasks = [
       { id: newId(), kind: "Дедлайн", title: "Анкеты на заселение в общежитие — в профком", subject: "", due: day(4), text: "", done: false, created },
       { id: newId(), kind: "Объявление", title: "Собрание группы после 3-й пары", subject: "", due: day(1), text: "Обсудим посвящение и сбор денег", done: false, created },
+      { id: newId(), kind: "Дедлайн", title: "Выбрать тему проекта по программированию", subject: "Программирование", due: day(8), text: "", done: false, created },
     ];
     DB.works = [
       { id: newId(), title: "Лабораторная №2", subject: "Информатика", due: day(-2), created: Date.now(), done: map(some(0.8)) },
       { id: newId(), title: "Реферат", subject: "История России", due: day(6), created: Date.now(), done: map(some(0.3)) },
     ];
     DB.funds = [{ id: newId(), title: "Подарок куратору", amount: 200, due: day(5), created: Date.now(), paid: map(some(0.6)) }];
+    DB.docs = [
+      { id: newId(), title: "Заявления на студенческие билеты", due: day(3), note: "Деканат", created: Date.now(), done: map(some(0.7)) },
+      { id: newId(), title: "Согласие на обработку данных", due: day(10), note: "Деканат", created: Date.now(), done: map(some(0.35)) },
+    ];
+    DB.polls = [
+      { id: newId(), title: "Когда удобно провести собрание группы?", options: ["Во вторник после пар", "В четверг после пар", "Онлайн вечером"], multi: false, due: day(2), created: Date.now(), answers: Object.fromEntries(some(0.7).map(id => [id, Math.floor(R() * 3)])) },
+      { id: newId(), title: "Кто идёт на день факультета?", options: ["Иду", "Пока не знаю", "Не смогу"], multi: false, due: day(6), created: Date.now(), answers: Object.fromEntries(some(0.45).map(id => [id, Math.floor(R() * 3)])) },
+    ];
     DB.exams = [
+      { id: newId(), subject: "Информатика", kind: "Зачёт", date: day(-7), time: "09:45", room: "", teacher: "", note: "Демонстрационные оценки", results: Object.fromEntries(ids.map(id => [id, { g: R() < 0.87 ? "зач" : "незач" }])) },
       { id: newId(), subject: "Информатика", kind: "Зачёт", date: key(addDays(end, -6)), time: "09:45", room: "", teacher: "", note: "" },
       { id: newId(), subject: "Математика", kind: "Консультация", date: key(addDays(end, 12)), time: "11:35", room: "", teacher: "", note: "" },
       { id: newId(), subject: "Математика", kind: "Экзамен", date: key(addDays(end, 13)), time: "09:00", room: "", teacher: "", note: "Взять зачётку" },
     ];
-    DB.events = [{ id: newId(), title: "Посвящение в студенты", kind: "Праздник", date: day(7), time: "18:00", place: "Актовый зал", text: "", going: some(0.45) }];
+    DB.events = [
+      { id: newId(), title: "День факультета", kind: "Праздник", date: day(7), time: "18:00", place: "Актовый зал", text: "", going: some(0.45) },
+      { id: newId(), title: "Встреча с куратором", kind: "Встреча", date: day(11), time: "15:30", place: "Учебный корпус", text: "", going: some(0.7) },
+    ];
   }
   const feedbackBtn = (cls = "btn btn--primary btn--sm") => FEEDBACK_URL ? `<a class="${cls}" href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">${ic("star")}Оценить</a>` : "";
   const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> ФИО вымышлены, расписание составлено на основе открытых данных НГТУ, отметки расставлены случайно.${window.STAROSTA_PREVIEW ? " Аккаунт и почта в этой версии не подключены." : ""}</span>
@@ -2047,7 +2062,7 @@
   }
   function draw(keepScroll) {
     // #demo — прямая ссылка на пример для гостей
-    if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (!isDemo()) { ACT.demo(); if (!DB) return; } }
+    if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (isDemo() && window.STAROSTA_PREVIEW) { ACT.demoApply(); return; } if (!isDemo()) { ACT.demo(); if (!DB) return; } }
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
     if (DB?.settings?.setup_step && (!location.hash || location.hash === "#home")) history.replaceState(null, "", "#setup");
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");

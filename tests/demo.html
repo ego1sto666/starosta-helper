@@ -36,6 +36,9 @@ async function run() {
   log("1 students:", d.students.length, "| lessons:", d.lessons.length, "| records:", recs.length, "| hash:", W().location.hash);
   log("1 marks + / н / у:", cnt("+"), cnt("н"), cnt("у"), "| all marked:", marks.length > 0 && marks.every(m => "+ну".includes(m)));
   log("1 tasks/works/funds/exams/events:", [d.tasks, d.works, d.funds, d.exams, d.events].map(a => a.length).join("/"));
+  if (d.settings.group !== "26-ИВТ-2-1" || d.students.length !== 37 || d.docs.length < 2 || d.polls.length < 2 || !d.exams.some(x => Object.keys(x.results || {}).length === d.students.length))
+    throw new Error("Пример группы заполнен не полностью");
+  log("1 group/data:", d.settings.group, "| docs:", d.docs.length, "| polls:", d.polls.length, "| graded:", d.exams.filter(x => x.results).length);
   log("1 strip on home:", !!$(".demo-strip"), "| backup tip hidden:", !$('.tip [data-act="exportJson"]'));
   // подгрупповые пары — только своя подгруппа
   const sgRec = recs.find(r => /подгруппа 1/.test(r.subject));
