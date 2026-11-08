@@ -13,4 +13,5 @@ docs/
 
 # результаты тестов
 tests/out/
+dist/
 __pycache__/

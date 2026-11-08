@@ -1603,7 +1603,7 @@
     DB.events = [{ id: newId(), title: "Посвящение в студенты", kind: "Праздник", date: day(7), time: "18:00", place: "Актовый зал", text: "", going: some(0.45) }];
   }
   const feedbackBtn = (cls = "btn btn--primary btn--sm") => FEEDBACK_URL ? `<a class="${cls}" href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">${ic("star")}Оценить</a>` : "";
-  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Пример.</b> Список и расписание группы 26-ИВТ-2-1 настоящие, отметки посещаемости расставлены случайно.</span>
+  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> ФИО вымышлены, расписание составлено на основе открытых данных НГТУ, отметки расставлены случайно.${window.STAROSTA_PREVIEW ? " Аккаунт и почта в этой версии не подключены." : ""}</span>
     <div class="btn-row">${feedbackBtn()}<button class="btn btn--soft btn--sm" data-act="demoExit">Своя группа</button></div></div>`;
 
   /* ----- первый запуск ----- */
@@ -1619,7 +1619,7 @@
           <button class="btn btn--primary btn--block btn--lg" data-act="startWizard">Начать настройку</button></section>
         <section class="card welcome__card">
           <div class="card__head">${ic("chart")}<h3>Просто посмотреть</h3></div>
-          <p class="muted" style="font-size:14px;margin-bottom:12px">Пример с группой 26-ИВТ-2-1: настоящее расписание и список, посещаемость с начала занятий расставлена случайно.</p>
+          <p class="muted" style="font-size:14px;margin-bottom:12px">Пример группы 26-ИВТ-2-1: вымышленные студенты, расписание на основе открытых данных и случайные отметки посещаемости.</p>
           <button class="btn btn--primary btn--block btn--lg" data-act="demo">Открыть пример</button>
           ${FEEDBACK_URL ? `<p class="hint" style="margin-top:10px">Понравилось или нет — <a href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">оцените сайт</a></p>` : ""}
         </section>
