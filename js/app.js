@@ -3405,6 +3405,14 @@
   const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
   if (DB && pinSet()) LOCKED = true;
-  fontsReady.then(async () => { await restoreAccount(); render(); if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); } });
+  fontsReady.then(async () => {
+    await restoreAccount();
+    // У гостевого просмотра свои данные в браузере. Обновляем только устаревший
+    // пример, чтобы обычная ссылка #home не показывала прежний вымышленный список.
+    if (window.STAROSTA_PREVIEW && (!DB || (isDemo() && DB.settings.preview_version !== window.STAROSTA_PREVIEW_VERSION)))
+      await ACT.demoApply();
+    else render();
+    if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); }
+  });
   addEventListener("online", () => { autoCheck(); if (SYNC) SYNC.pull().catch(() => {}); });
 })();

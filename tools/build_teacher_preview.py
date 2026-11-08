@@ -50,6 +50,7 @@ def main() -> None:
             s["name"] = name
             s["role"] = "head" if name == "Юнусов Артём" else "deputy" if name == "Германскова Екатерина" else ""
         data["settings"]["preview_real_roster"] = True
+        data["settings"]["preview_version"] = 2
     target.mkdir(parents=True, exist_ok=True)
     for name in FILES:
         source = ROOT / name
@@ -62,7 +63,7 @@ def main() -> None:
     html = (target / "index.html").read_text(encoding="utf-8")
     html = html.replace('<meta name="description"', '<meta name="robots" content="noindex,nofollow">\n  <meta name="description"', 1)
     (target / "index.html").write_text(html, encoding="utf-8")
-    (target / "js/config.js").write_text("// Публичный просмотр: аккаунты и почта не подключены.\nwindow.STAROSTA_PREVIEW = true;\n", encoding="utf-8")
+    (target / "js/config.js").write_text("// Публичный просмотр: аккаунты и почта не подключены.\nwindow.STAROSTA_PREVIEW = true;\nwindow.STAROSTA_PREVIEW_VERSION = 2;\n", encoding="utf-8")
     manifest = json.loads((target / "manifest.webmanifest").read_text(encoding="utf-8"))
     manifest["start_url"] = "./#demo"
     (target / "manifest.webmanifest").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
