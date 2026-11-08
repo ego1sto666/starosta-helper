@@ -49,7 +49,7 @@ def main() -> None:
     (target / "sw.js").write_text(sw, encoding="utf-8")
     (target / ".nojekyll").write_text("", encoding="utf-8")
     (target / "README.md").write_text("# Помощник старосты — демонстрация\n\nПубличный просмотр на вымышленных данных. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
-    print(f"Собрано файлов: {len(FILES) + 4}. Каталог: {target}")
+    print(f"Собрано файлов: {len(FILES) + 3}. Каталог: {target}")
 
 
 if __name__ == "__main__":
