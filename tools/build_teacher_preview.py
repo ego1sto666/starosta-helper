@@ -46,7 +46,7 @@ def main() -> None:
         dest = target / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
-    (target / "demo/group.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (target / "demo/group.json").write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     html = (target / "index.html").read_text(encoding="utf-8")
     html = html.replace('<meta name="description"', '<meta name="robots" content="noindex,nofollow">\n  <meta name="description"', 1)
     (target / "index.html").write_text(html, encoding="utf-8")
