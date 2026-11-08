@@ -1,7 +1,7 @@
 /* Работа без интернета. Файлы приложения: сначала сеть (чтобы обновления приходили сразу),
    без сети — из кеша.
    Запросы к сайту НГТУ не кешируются: расписание загружается только по кнопке. */
-const CACHE = "starosta-v28";
+const CACHE = "starosta-v29";
 const SHELL = ["./", "index.html", "privacy.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/config.js", "js/api.js", "js/app.js", "demo/group.json",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
   "assets/icons-fill.woff2", "assets/onest-cyrillic.woff2", "assets/onest-latin.woff2",

@@ -1575,8 +1575,8 @@
   function demoFill() {
     const R = Math.random, day = n => key(addDays(TODAY, n));
     const ids = students().map(s => s.id), some = share => ids.filter(() => R() < share);
-    if (DB.students[0]) DB.students[0].role = "head";
-    if (DB.students[1]) DB.students[1].role = "deputy";
+    if (!DB.students.some(s => s.role === "head") && DB.students[0]) DB.students[0].role = "head";
+    if (!DB.students.some(s => s.role === "deputy") && DB.students[1]) DB.students[1].role = "deputy";
     // у каждого своя привычка: большинство ходит почти всегда, несколько человек — с пропусками
     const habit = Object.fromEntries(ids.map(id => [id, R() < 0.1 ? 0.6 + R() * 0.15 : 0.86 + R() * 0.13]));
     const { start, end } = term();
@@ -1618,7 +1618,7 @@
     ];
   }
   const feedbackBtn = (cls = "btn btn--primary btn--sm") => FEEDBACK_URL ? `<a class="${cls}" href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">${ic("star")}Оценить</a>` : "";
-  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> ФИО вымышлены, расписание составлено на основе открытых данных НГТУ, отметки расставлены случайно.${window.STAROSTA_PREVIEW ? " Аккаунт и почта в этой версии не подключены." : ""}</span>
+  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> ${DB.settings.preview_real_leader ? "Староста — Юнусов Артём, имена остальных студентов вымышлены." : "ФИО вымышлены."} Расписание составлено на основе открытых данных НГТУ, отметки, дела и оценки заполнены случайно.${window.STAROSTA_PREVIEW ? " Аккаунт и почта в этой версии не подключены." : ""}</span>
     <div class="btn-row">${feedbackBtn()}<button class="btn btn--soft btn--sm" data-act="demoExit">Своя группа</button></div></div>`;
 
   /* ----- первый запуск ----- */

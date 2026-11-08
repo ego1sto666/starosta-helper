@@ -30,6 +30,14 @@ def main() -> None:
         raise SystemExit("Имена преподавателей в примере не обезличены")
     if any(l.get("teacher") and not re.fullmatch(r"Преподаватель \d+", l["teacher"]) for l in data.get("lessons", [])):
         raise SystemExit("В расписании примера есть реальные имена преподавателей")
+    # В показе своей группы староста указан по имени; остальные студенты остаются вымышленными.
+    leaders = [s for s in data["students"] if s.get("id") == "90a6f10b02"]
+    if len(leaders) != 1:
+        raise SystemExit("Не найден профиль старосты для публичного примера")
+    for s in data["students"]:
+        s["role"] = "head" if s is leaders[0] else ""
+    leaders[0]["name"] = "Юнусов Артём"
+    data["settings"]["preview_real_leader"] = True
     target.mkdir(parents=True, exist_ok=True)
     for name in FILES:
         source = ROOT / name
@@ -38,6 +46,7 @@ def main() -> None:
         dest = target / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, dest)
+    (target / "demo/group.json").write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     html = (target / "index.html").read_text(encoding="utf-8")
     html = html.replace('<meta name="description"', '<meta name="robots" content="noindex,nofollow">\n  <meta name="description"', 1)
     (target / "index.html").write_text(html, encoding="utf-8")
@@ -48,7 +57,7 @@ def main() -> None:
     sw = (target / "sw.js").read_text(encoding="utf-8").replace('"privacy.html", ', "")
     (target / "sw.js").write_text(sw, encoding="utf-8")
     (target / ".nojekyll").write_text("", encoding="utf-8")
-    (target / "README.md").write_text("# Помощник старосты — демонстрация\n\nПубличный просмотр на вымышленных данных. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
+    (target / "README.md").write_text("# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\nСтароста — Юнусов Артём. Имена остальных студентов вымышлены. Расписание основано на открытых данных НГТУ, дела, отметки и оценки случайные. Контактов студентов нет. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
     print(f"Собрано файлов: {len(FILES) + 3}. Каталог: {target}")
 
 
