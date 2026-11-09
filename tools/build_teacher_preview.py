@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FILES = [
     "index.html", "manifest.webmanifest", "sw.js", "demo/group.json",
     "css/app.css", "css/tokens.css",
-    "js/app.js", "js/api.js", "js/nntu.js", "js/xlsx.js",
+    "js/app.js", "js/api.js", "js/routes.js", "js/nntu.js", "js/xlsx.js",
     "assets/icon.png", "assets/icons.woff2", "assets/icons-fill.woff2",
     "assets/onest-cyrillic.woff2", "assets/onest-latin.woff2",
     "assets/unbounded-cyrillic.woff2", "assets/unbounded-latin.woff2",

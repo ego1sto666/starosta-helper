@@ -1222,8 +1222,8 @@
   };
 
   /* ----- Учёба (сдачи работ, сессия) и внеучебка (дела, сборы, события, опросы) ----- */
-  const STUDY_VIEWS = [["works", "Сдачи", "#study/works"], ["exams", "Сессия", "#study/exams"], ["grades", "Оценки", "#study/grades"]];
-  const EXTRA_VIEWS = [["tasks", "Дела", "#tasks"], ["funds", "Сборы", "#tasks/funds"], ["events", "События", "#events"], ["polls", "Опросы", "#tasks/polls"]];
+  const STUDY_VIEWS = window.StarostaRoutes.tabs.study;
+  const EXTRA_VIEWS = window.StarostaRoutes.tabs.tasks;
   const viewTabs = (views, cur) => `<div class="seg seg--fit${views.length > 4 ? " seg--many" : ""}" role="tablist" aria-label="Раздел">${views.map(([v, n, h]) => `<button role="tab" aria-selected="${cur === v}" data-go="${h}">${n}</button>`).join("")}</div>`;
   const studyTabs = () => viewTabs(STUDY_VIEWS, S.studyView), extraTabs = () => viewTabs(EXTRA_VIEWS, S.tasksView === "docs" ? "funds" : S.tasksView);
   const rub = n => `${(+n || 0).toLocaleString("ru-RU")} ₽`;
@@ -1995,7 +1995,7 @@
   }
 
   /* ================= КАРКАС ================= */
-  const NAV = [["home", "Сегодня", "home"], ["journal", "Журнал", "journal"], ["group", "Группа", "group"], ["study", "Учёба", "exam"], ["tasks", "Внеучебка", "party"]];
+  const NAV = window.StarostaRoutes.sections;
   const app = $(".app"), view = $("#view"), topbar = $("#topbar"), nav = $("#nav"), fab = $("#fab"), actionbar = $("#actionbar");
   let lastRoute = "", current = null;
 
