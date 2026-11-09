@@ -90,7 +90,8 @@ a { color: inherit; text-decoration: none; }
 .fab .ic { flex: none; font-size: 20px; }
 .fab:hover { filter: brightness(1.07); }
 .fab:active { filter: brightness(.95); }
-.home-attendance { margin-top: 12px; max-width: 100%; height: auto; min-height: var(--h-btn); padding-block: 8px; white-space: normal; }
+.home-priorities { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.home-priorities .btn { max-width: 100%; height: auto; min-height: var(--h-btn); padding-block: 8px; white-space: normal; }
 
 /* ---------- нижняя панель действий (экран отметки) ---------- */
 .actionbar { position: fixed; z-index: 30; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom));
@@ -467,19 +468,24 @@ a { color: inherit; text-decoration: none; }
 .notice .link { margin-left: auto; color: inherit; text-decoration: underline; }
 
 /* ---------- лента дней ---------- */
-.days { display: grid; grid-template-columns: 44px repeat(6, minmax(0, 1fr)) 44px; gap: 4px; align-items: center; }
+.journal-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+.journal-week, .journal-date-actions { display: flex; align-items: center; gap: 8px; }
+.journal-week { justify-content: space-between; }
+.journal-week b { text-align: center; }
+.journal-date-actions { justify-content: flex-end; }
+.journal-date-actions .btn { padding-inline: 12px; }
+.journal-date-actions .btn:disabled { opacity: .66; cursor: default; }
+.days { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .day { height: 64px; border-radius: 18px; display: grid; place-content: center; text-align: center; gap: 3px; min-width: 0;
   font-size: 12px; color: var(--muted-ink); transition: background var(--dur) var(--ease), transform 240ms var(--ease-spring); }
 .day:active { transform: scale(.92); transition-duration: 80ms; }
 .day b { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .day:hover { background: var(--card); }
 .day--today b, .day--today { color: var(--primary-ink); }
-.day[aria-selected="true"] { background: var(--primary-ink); color: #fff; }
-.day[aria-selected="true"] b { color: #fff; }
-[data-mode="dark"] .day[aria-selected="true"], [data-mode="dark"] .day[aria-selected="true"] b { background: var(--primary); color: var(--on-primary); }
+.day[aria-pressed="true"] { background: var(--primary-ink); color: var(--on-primary); }
+.day[aria-pressed="true"] b { color: inherit; }
 .day__dots { display: flex; gap: 3px; justify-content: center; height: 5px; }
 .day__dots i { width: 4px; height: 4px; border-radius: 2px; background: currentColor; opacity: .55; }
-.days .icon-btn { width: 40px; height: 40px; background: transparent; }
 .datebar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 6px; }
 .datebar__label { text-align: center; }
 .datebar__label b { display: block; font-size: 17px; font-weight: var(--fw-bold); }
@@ -707,6 +713,9 @@ a { color: inherit; text-decoration: none; }
 .quick b { font-weight: var(--fw-bold); font-size: 15px; }
 .field { display: grid; gap: 6px; margin-bottom: 12px; }
 .field__label, .field > label { font-size: var(--fs-meta); font-weight: var(--fw-bold); color: var(--muted-ink); }
+.form-err { color: var(--bad-ink); background: var(--bad-soft); padding: 10px 12px;
+  border-left: 3px solid var(--bad-ink); border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+.form-err:focus { outline: 2px solid var(--bad-ink); outline-offset: 2px; }
 .field { min-width: 0; }
 .field select { width: 100%; min-width: 0; text-overflow: ellipsis; }
 .field input, .field select { height: 48px; border-radius: 14px; border: 1px solid transparent; background: var(--field); padding: 0 14px; font-size: 15px; outline: none; }
@@ -829,8 +838,7 @@ a { color: inherit; text-decoration: none; }
   .tile { padding: 12px; min-height: 100px; }
   .tile b { font-size: 28px; }
   .nav__item { font-size: 10.5px; }
-  .days { grid-template-columns: 34px repeat(6, minmax(0, 1fr)) 34px; gap: 3px; }
-  .days .icon-btn { width: 34px; height: 44px; }
+  .days { gap: 3px; }
   .now__ring { width: 64px; height: 64px; }
 }
 @media (max-width: 899px) {
@@ -841,6 +849,8 @@ a { color: inherit; text-decoration: none; }
   .field input, .field select, .field textarea, .search input { font-size: 16px; }
 }
 @media (max-width: 440px) {
+  .journal-controls { grid-template-columns: minmax(0, 1fr); }
+  .journal-date-actions { justify-content: space-between; }
   .group-tools { grid-template-columns: minmax(0, 1fr); }
   .group-tools > .btn { justify-self: start; }
   .settings-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1020,7 +1030,9 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- мелочи оформления 2.0 ---------- */
 .avatar { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
-.day[aria-selected="true"] { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--primary-ink) 70%, transparent); }
+.day[aria-pressed="true"] { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--primary-ink) 70%, transparent); }
+.home-task { width: 100%; text-align: left; }
+.task-period[data-period="overdue"] .section-head h2 { color: var(--bad-ink); }
 .tile .ic { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-size: 22px;
   background: color-mix(in srgb, var(--primary) 12%, var(--card)); }
 .tile--alert .ic { background: color-mix(in srgb, var(--bad) 12%, var(--card)); }

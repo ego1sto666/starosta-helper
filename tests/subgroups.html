@@ -53,8 +53,8 @@ async function run() {
   f = await form("sgCount"); f.count.value = "2"; await save(f);
   check(data().settings.subgroup_subject_counts["Экономика"] === 2, "число подгрупп предмета изменено на 2");
   const subject = one("[data-sg-subject]");
-  subject.value = ""; subject.dispatchEvent(new win().Event("change", { bubbles: true }));
-  await until(() => win().location.hash === "#subgroups" && one('[data-sg-subject]')?.value === "");
+  subject.value = ""; subject.dispatchEvent(new (win().Event)("change", { bubbles: true }));
+  await until(() => win().location.hash === "#subgroups" && one(".topbar__sub")?.textContent === "Основное деление");
   one('.sg-list [data-act="sgPanel"][data-n="0"]').click();
   const sid = one('#sg-panel-0 [data-act="sgCycle"]').dataset.id;
   one(`#sg-panel-0 [data-act="sgCycle"][data-id="${sid}"]`).click();

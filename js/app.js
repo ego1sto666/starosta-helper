@@ -458,6 +458,12 @@
     if (n === 0) return `<div class="due due--late">${base} · сегодня</div>`;
     return `<div class="due ${n <= 3 ? "due--soon" : "due--ok"}">${base} · ${whenText(n)}</div>`;
   }
+  const taskOrder = (a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")) || (a.created || 0) - (b.created || 0);
+  function taskPeriod(t) {
+    const date = parseISO(t.due);
+    if (!date) return "undated";
+    return date < TODAY ? "overdue" : same(date, TODAY) ? "today" : "upcoming";
+  }
   function parseBday(s) {
     const m = /^(\d{1,2})\.(\d{1,2})(?:\.(\d{2}|\d{4}))?$/.exec((s || "").trim()); if (!m) return null;
     const d = +m[1], mo = +m[2], t = new Date(2000, mo - 1, d);
@@ -633,7 +639,7 @@
   async function loadNntu(form, group, onDone) {
     const err = form.querySelector(".form-err"), btn = form.querySelector("button:not([type=button])");
     const dataBefore = DB;
-    const say = msg => { if (err) { err.textContent = msg; err.hidden = !msg; } };
+    const say = msg => { if (msg) showFormError(form, msg); else if (err) err.hidden = true; };
     group = NNTU.normGroup(group);
     if (!group) return say("Укажите номер группы");
     say(""); const label = btn && btn.innerHTML; if (btn) { btn.disabled = true; btn.textContent = "Загружаем…"; }
@@ -731,7 +737,8 @@
     const next = today.find(l => lessonState(l, TODAY) === "future" && lessonSpan(l)[0]);
     const unmarked = activeOnly(today).find(l => lessonState(l, TODAY) === "past" && !DB.attendance[attKey(TODAY, l.id)]);
     const open = DB.tasks.filter(t => !t.done);
-    const late = open.filter(t => { const d = parseISO(t.due); return d && d < TODAY; }).length;
+    const late = open.filter(t => taskPeriod(t) === "overdue").length;
+    const urgent = late + open.filter(t => taskPeriod(t) === "today").length;
     const soon = DB.events.filter(e => { const d = eventDate(e); return d && d >= TODAY && d < addDays(TODAY, 14); }).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
     const tomorrow = lessonsOn(addDays(TODAY, 1));
     const bdays = students().map(s => { const p = parseBday(s.birthday); const d = p && nextBday(p); return d && { s, d, n: daysBetween(TODAY, d) }; }).filter(x => x && x.n <= 30).sort((a, b) => a.n - b.n);
@@ -758,8 +765,8 @@
     }
 
     const side = `
-      <section class="card"><div class="card__head">${ic("alarm")}<h3>Сроки</h3><a class="link" href="#tasks">Все дела</a></div>
-        ${open.length ? `<div class="mini">${open.slice().sort((a, b) => (a.due || "9").localeCompare(b.due || "9")).slice(0, 3).map(t => `<a class="mini__row" href="#tasks">${taskBadge(t)}<div class="mini__body"><div class="mini__title">${esc(t.title)}</div>${dueHtml(t)}</div></a>`).join("")}</div>`
+      <section class="card"><div class="card__head">${ic("alarm")}<h3>Сроки</h3><a class="link" href="#tasks" data-act="showOpenTasks">Все дела</a></div>
+        ${open.length ? `<div class="mini">${open.slice().sort(taskOrder).slice(0, 3).map(t => `<button type="button" class="mini__row home-task" data-act="form" data-f="task" data-id="${esc(t.id)}">${taskBadge(t)}<div class="mini__body"><div class="mini__title">${esc(t.title)}</div>${dueHtml(t)}</div></button>`).join("")}</div>`
           : `<p class="muted" style="font-size:14px">Активных дел нет. <button class="link" data-act="form" data-f="task">Добавить</button></p>`}</section>
       <section class="card"><div class="card__head">${ic("party")}<h3>Ближайшие события</h3><a class="link" href="#events">Все</a></div>
         ${soon.length ? `<div class="mini">${soon.slice(0, 3).map(e => `<a class="mini__row" href="#events"><span class="badge" style="--c:${eventKind(e).c}">${ic(eventKind(e).i)}</span><div class="mini__body"><div class="mini__title">${esc(e.title)}</div><div class="mini__sub">${fmtShort(eventDate(e))}${e.time ? " · " + esc(e.time) : ""}</div></div></a>`).join("")}</div>`
@@ -782,7 +789,7 @@
     const backupTip = needBackup() ? `<div class="card tip">${ic("download")}<div class="tip__body"><b>Сохраните копию данных</b><span>Отметки хранятся только в этом браузере. Скачайте файл на случай, если браузер очистят.</span></div><button class="btn btn--soft btn--sm" data-act="exportJson">Скачать</button></div>` : "";
     // плитки — только когда есть что показать: дела и события на ближайшие две недели
     const tiles = [
-      open.length && `<a class="card card--tap tile${late ? " tile--alert" : ""}" href="#tasks">${ic(late ? "alarm" : "tasks")}<b class="num">${open.length}</b><span>${late ? `${plural(open.length, ["дело", "дела", "дел"])}, ${late} просрочено` : plural(open.length, ["дело", "дела", "дел"])}</span></a>`,
+      open.length && `<a class="card card--tap tile${late ? " tile--alert" : ""}" href="#tasks" data-act="showOpenTasks">${ic(late ? "alarm" : "tasks")}<b class="num">${open.length}</b><span>${late ? `${plural(open.length, ["дело", "дела", "дел"])}, ${late} просрочено` : plural(open.length, ["дело", "дела", "дел"])}</span></a>`,
       soon.length && `<a class="card card--tap tile" href="#events">${ic("party")}<b class="num">${soon.length}</b><span>${plural(soon.length, ["событие", "события", "событий"])} скоро</span></a>`,
     ].filter(Boolean).join("");
 
@@ -791,12 +798,15 @@
       html: `
         <div class="home-top"><section class="hero"><h1>Сегодня</h1>
           <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p>
-          ${!live && unmarked ? `<a class="btn btn--primary home-attendance" href="#mark/${encodeURIComponent(unmarked.id)}/${key(TODAY)}">${ic("journal")}Отметить прошедшую пару</a>` : ""}</section>${nowCard}</div>
+          ${(!live && unmarked) || urgent ? `<div class="home-priorities">
+            ${!live && unmarked ? `<a class="btn btn--primary" href="#mark/${encodeURIComponent(unmarked.id)}/${key(TODAY)}">${ic("journal")}Отметить прошедшую пару</a>` : ""}
+            ${urgent ? `<a class="btn btn--soft" href="#tasks" data-act="showOpenTasks">${ic("alarm")}${urgent} ${plural(urgent, ["срочное дело", "срочных дела", "срочных дел"])}</a>` : ""}
+          </div>` : ""}</section>${nowCard}</div>
         <div class="split home-workspace">
           <div class="stack">
             ${sectionHead("schedule", "Пары сегодня", `<a class="link" href="#journal">Журнал</a>`, lessonCount || undefined)}
             ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "В журнале можно посмотреть расписание на другие дни.", '<a class="btn btn--soft" href="#journal">Открыть журнал</a>')}
-            ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="#journal" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
+            ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="${journalHref(addDays(TODAY, 1))}">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
               <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(dayText(addDays(TODAY, 1)))}" aria-label="Скопировать расписание на завтра для чата" title="Скопировать расписание на завтра для чата">${ic("chat")}</button></div>` : ""}
           </div>
           <aside class="split__side" aria-label="Сводка">${notices}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${backupTip}${side}</aside>
@@ -805,18 +815,35 @@
   };
 
   /* ----- Журнал: расписание и отметки на одном экране ----- */
+  const journalHref = d => `#journal/${key(d)}`;
+  function goJournal(date) {
+    const route = journalHref(date);
+    if (location.hash === route) render(true);
+    else location.hash = route;
+  }
   // старые ссылки #schedule ведут в журнал
   SCREENS.schedule = () => { history.replaceState(null, "", "#journal"); return SCREENS.journal(); };
-  SCREENS.journal = () => {
-    const d = S.journalDate ||= TODAY, list = dayLessons(d), isToday = same(d, TODAY), info = weekInfo(d), mon = monday(d);
+  SCREENS.journal = date => {
+    const parsed = parseISO(date);
+    const d = S.journalDate = parsed && key(parsed) === date ? parsed : TODAY;
+    const list = dayLessons(d), isToday = same(d, TODAY), info = weekInfo(d), mon = monday(d);
     const live = activeOnly(list), marked = live.filter(l => DB.attendance[attKey(d, l.id)]).length;
-    const days = [0, 1, 2, 3, 4, 5].map(i => addDays(mon, i));
+    const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i));
     const slotsOf = x => new Set(lessonsOn(x).map(l => lessonSpan(l)[0] + l.num)).size;
-    const strip = `<div class="days" role="tablist" aria-label="Дни недели">
-      <button class="icon-btn" data-act="journalShift" data-n="-7" aria-label="Предыдущая неделя">${ic("left")}</button>
-      ${days.map(x => { const n = slotsOf(x); return `<button class="day${same(x, TODAY) ? " day--today" : ""}" role="tab" aria-selected="${same(x, d)}" data-act="journalDay" data-d="${key(x)}" aria-label="${fmtLong(x)}, ${n} ${plural(n, ["пара", "пары", "пар"])}">
+    const strip = `<div class="journal-controls">
+      <div class="journal-week" role="group" aria-label="Перелистывание недель">
+        <button class="icon-btn" data-act="journalShift" data-n="-7" aria-label="Предыдущая неделя">${ic("left")}</button>
+        <b>${fmtDate(mon)} – ${fmtDate(days[6])}</b>
+        <button class="icon-btn" data-act="journalShift" data-n="7" aria-label="Следующая неделя">${ic("right")}</button>
+      </div>
+      <div class="journal-date-actions">
+        <button class="btn btn--soft" data-act="journalToday"${isToday ? " disabled" : ""}>Сегодня</button>
+        <button class="btn btn--neutral" data-act="form" data-f="journalDate">${ic("calendar")}Выбрать дату</button>
+      </div>
+      <div class="days" role="group" aria-label="Дни недели">
+      ${days.map(x => { const n = slotsOf(x); return `<button class="day${same(x, TODAY) ? " day--today" : ""}" aria-pressed="${same(x, d)}" data-act="journalDay" data-d="${key(x)}" aria-label="${fmtLong(x)}, ${n} ${plural(n, ["пара", "пары", "пар"])}">
           <span>${WDS[x.getDay()]}</span><b>${x.getDate()}</b><span class="day__dots">${"<i></i>".repeat(Math.min(n, 5))}</span></button>`; }).join("")}
-      <button class="icon-btn" data-act="journalShift" data-n="7" aria-label="Следующая неделя">${ic("right")}</button></div>`;
+      </div></div>`;
     const weekCard = `<section class="card"><div class="card__head">${ic("journal")}<h3>Неделя в журнале</h3></div><div class="mini">${days.map(x => {
       const ls = activeOnly(dayLessons(x)), mk = ls.filter(l => DB.attendance[attKey(x, l.id)]).length, started = ls.filter(l => lessonState(l, x) !== "future").length;
       const pill = !ls.length ? `<span class="muted">—</span>` : mk >= started && started ? `<span class="pill pill--ok num">${mk}/${ls.length}</span>` : started ? `<span class="pill pill--warn num">${mk}/${ls.length}</span>` : `<span class="muted num">${mk}/${ls.length}</span>`;
@@ -833,12 +860,12 @@
       : empty("schedule", "В расписании пока нет пар", "Загрузите таблицу расписания или добавьте первую пару кнопкой «+».", `<button class="btn btn--primary" data-act="form" data-f="scheduleImport">${ic("download")}Импортировать расписание</button>`);
     return {
       title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
-      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ...(nntuAvailable() ? [["download", "Обновить расписание с сайта НГТУ", "form", "nntu"]] : []), ["calendar", "Выбрать дату", "pickDate"]],
+      actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ...(nntuAvailable() ? [["download", "Обновить расписание с сайта НГТУ", "form", "nntu"]] : [])],
       html: `${strip}
         <div class="bells only-narrow">${ic("clock")}Звонки: ${bl.length} ${plural(bl.length, ["пара", "пары", "пар"])}, ${bl[0][0]}–${bl[bl.length - 1][1]}</div>
         <div class="split">
           <div class="stack">
-            ${sectionHead("", fmtLong(d), isToday ? `<span class="chip" style="--c:var(--primary)">сегодня</span>` : `<button class="link" data-act="journalToday">К сегодня</button>`)}
+            ${sectionHead("", fmtLong(d))}
             ${!DB.students.length ? empty("group", "", "В группе нет студентов. Добавьте их во вкладке «Группа».") : ""}
             ${body}
             <button class="btn btn--neutral btn--block" data-act="form" data-f="extra">${ic("plus")}Пара не по расписанию</button>
@@ -873,7 +900,7 @@
     else if (sg) { const base = baseSubject(l.subject), own = ownSplit(), free = DB.students.filter(s => !studentSubgroup(s, base, own)).length; if (free) notice += `<div class="notice">${ic("subgroups")}<span>Без подгруппы: <b>${free}</b></span><a class="link" href="#subgroups/${encodeURIComponent(base)}">Распределить</a></div>`; }
     return {
       title: baseSubject(l.subject), sub: `${fmtShort(d)} · ${l.num || "?"} пара${b ? ` · ${b}–${e}` : ""}${sg ? ` · п/г ${sg}` : ""}`,
-      back: "#journal", nav: "journal", focus: true, actions: [["broom", "Удалить отметки занятия", "resetMarks"]],
+      back: journalHref(d), nav: "journal", focus: true, actions: [["broom", "Удалить отметки занятия", "resetMarks"]],
       actionbar: `<button class="btn btn--ok" data-act="allHere">${ic("tick")}Все были</button><button class="btn btn--primary" data-act="copyAbsent">${ic("copy")}Список пропусков</button>`,
       html: `
         <div class="card markbar" id="markbar">${markbarHtml()}</div>
@@ -1157,7 +1184,7 @@
     const recs = periodRecords(S.statsPeriod, S.statsSubject), st = collectStats(recs);
     const subs = [...new Set(periodRecords(S.statsPeriod).map(x => baseSubject(x.r.subject)))].sort((a, b) => a.localeCompare(b, "ru"));
     const filter = subs.length ? `<div class="filter" role="group" aria-label="Предмет"><button aria-pressed="${!S.statsSubject}" data-act="statsSubj" data-s="">Все предметы</button>${subs.map(s => `<button aria-pressed="${S.statsSubject === s}" data-act="statsSubj" data-s="${esc(s)}" title="${esc(s)}"><span>${esc(s)}</span></button>`).join("")}</div>` : "";
-    const head = { title: "Итоги", sub: `${periodTitle(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: "#journal", nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
+    const head = { title: "Итоги", sub: `${periodTitle(S.statsPeriod)} · ${S.statsSubject || "все предметы"}`, back: journalHref(S.journalDate || TODAY), nav: "journal", actions: [["excel", "Выгрузить в Excel", "excel"]] };
     if (!st.all.length) return { ...head, html: `${periodTabs("statsPeriod")}${filter}${empty("chart", "Пока нет отметок", `За период «${periodTitle(S.statsPeriod)}» ещё нет отмеченных пар. Итоги появятся после первой отметки в журнале.`)}` };
     const P = st.pct ?? 0, risk = riskPct(), list = allStudents().map(s => ({ s, m: st.per[s.id] || [] })).filter(x => x.m.length).map(x => ({ ...x, p: attendancePct(x.m) ?? 100, abs: x.m.filter(m => m === "н").length, exc: x.m.filter(m => m === "у").length })).sort((a, b) => a.p - b.p);
     const low = list.filter(x => x.p < risk).length;
@@ -1344,20 +1371,28 @@
     if (S.tasksView === "polls") return pollsScreen();
     const done = S.taskTab === "done";
     const items = DB.tasks.filter(t => !!t.done === done && (!S.taskKind || t.kind === S.taskKind))
-      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (a.created || 0) - (b.created || 0));
+      .sort(taskOrder);
     const nOpen = DB.tasks.filter(t => !t.done).length, nDone = DB.tasks.length - nOpen;
     const card = t => `<article class="card task${t.done ? " task--done" : ""}">${taskBadge(t)}
       <button class="task__body" style="text-align:left" data-act="form" data-f="task" data-id="${esc(t.id)}" aria-label="Изменить: ${esc(t.title)}"><div class="task__title">${esc(t.title)}</div>
       ${t.subject ? `<div class="person__meta" style="margin:2px 0">${esc(t.subject)}</div>` : ""}${dueHtml(t)}${t.text ? `<p class="muted" style="font-size:13px;margin-top:4px;white-space:pre-line">${esc(t.text)}</p>` : ""}</button>
       <button class="check" data-act="taskDone" data-id="${esc(t.id)}" aria-label="${t.done ? "Вернуть в работу" : "Отметить выполненным"}">${ic(t.done ? "check" : "uncheck")}</button></article>`;
+    const groups = [["overdue", "Просрочено"], ["today", "Сегодня"], ["upcoming", "Позже"], ["undated", "Без срока"]];
+    const cards = list => `<div class="grid grid--cols">${list.map(card).join("")}</div>`;
+    const grouped = groups.map(([period, title]) => {
+      const list = items.filter(task => taskPeriod(task) === period);
+      return list.length ? `<section class="stack task-period" data-period="${period}">${sectionHead("", title, "", list.length)}${cards(list)}</section>` : "";
+    }).join("");
     return {
       title: "Дела", sub: `${nOpen} ${plural(nOpen, ["активное", "активных", "активных"])}`, nav: "tasks", fab: "task",
       html: `${extraTabs()}
         <div class="filter" role="tablist"><button aria-pressed="${!done}" data-act="taskTab" data-t="open">Активные · ${nOpen}</button><button aria-pressed="${done}" data-act="taskTab" data-t="done">Готово · ${nDone}</button></div>
         <div class="filter" role="group" aria-label="Тип">${[["", "Все", ""], ...Object.entries(TASK_KINDS).map(([k, v]) => [k, k, v.i])].map(([k, n, i]) =>
           `<button aria-pressed="${S.taskKind === k}" data-act="taskKind" data-k="${esc(k)}">${i ? ic(i) : ""}${n}</button>`).join("")}</div>
-        ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
-          : empty("tasks", done ? "Здесь пусто" : "Дел нет", done ? "Выполненные дела появятся здесь." : "Нажмите «+», чтобы добавить дедлайн, объявление или напоминание. Лабораторные и рефераты — в разделе «Учёба».")}
+        ${items.length ? done ? cards(items) : grouped
+          : empty("tasks", S.taskKind ? "Нет дел этого типа" : done ? "Здесь пусто" : "Дел нет",
+            S.taskKind ? "Выберите другой тип или откройте все дела." : done ? "Выполненные дела появятся здесь." : "Добавьте дедлайн, объявление или напоминание. Лабораторные и рефераты — в разделе «Учёба».",
+            S.taskKind ? '<button class="btn btn--soft" data-act="taskKind" data-k="">Показать все типы</button>' : "")}
         ${done && items.length ? `<button class="btn btn--danger btn--block" data-act="clearDone">${ic("delete")}Удалить выполненные</button>` : ""}`,
     };
   };
@@ -2287,7 +2322,15 @@
   const setAvaField = (f, val) => { const s = DB.students.find(x => x.id === f.dataset.id) || {}; $("#avaField", f).outerHTML = avaField({ ...s, name: f.name.value.trim() || s.name }, val); };
   const field = (label, input) => `<label class="field"><span class="field__label">${label}</span>${input}</label>`;
   const textarea = (name, value, rows = 3, ph = "") => `<textarea name="${name}" rows="${rows}" placeholder="${esc(ph)}" style="border-radius:14px;border:0;background:var(--field);padding:12px 14px;font-size:15px;resize:vertical">${esc(value)}</textarea>`;
-  const formErr = `<p class="form-err" style="color:var(--bad-ink);font-size:13px;margin:-4px 0 10px" role="alert" hidden></p>`;
+  const formErr = `<p class="form-err" role="alert" tabindex="-1" hidden></p>`;
+  function showFormError(form, message) {
+    const alert = $(".form-err", form);
+    if (!alert || !form.isConnected) return;
+    alert.textContent = message;
+    if (form.firstElementChild !== alert) form.prepend(alert);
+    alert.hidden = false;
+    alert.focus();
+  }
   const formBtns = (delAct, delId) => `${formErr}<div class="btn-row" style="margin-top:6px">${delAct ? `<button type="button" class="btn btn--danger" style="flex:0 0 48px;padding:0" data-act="${delAct}" data-id="${esc(delId)}" aria-label="Удалить">${ic("delete")}</button>` : ""}<button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Сохранить</button></div>`;
   const select = (name, opts, val) => `<select name="${name}">${opts.map(o => { const [v, t] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(v)}"${String(v) === String(val) ? " selected" : ""}>${esc(t)}</option>`; }).join("")}</select>`;
   const toggleRow = (act, attrs, p, on) => `<button type="button" class="card card--tap person mark" data-act="${act}" ${attrs} data-s="${on ? "+" : "-"}" style="min-height:56px">${avatar(p)}<div class="person__body"><div class="person__name">${esc(p.name)}</div></div><span class="mark__chip">${on ? ic("tick") : "—"}</span></button>`;
@@ -2684,6 +2727,9 @@
       ${field("Количество подгрупп", `<input name="count" type="number" min="2" max="9" step="1" required value="${DB.settings.subgroup_count}" inputmode="numeric">`)}
       <p class="hint" style="text-align:left;margin:-4px 0 12px">Можно указать любой предмет, даже если его ещё нет в расписании. Распределение студентов для него будет отдельным.</p>${formBtns()}</form>`; },
     groupName: () => `${sheetHead("school", "var(--primary)", "Группа")}<form data-form="groupName">${field("Название группы", `<input name="group" value="${esc(DB.settings.group || "")}" placeholder="ИВТ 2-1">`)}${formBtns()}</form>`,
+    journalDate: () => `${sheetHead("calendar", "var(--primary)", "К какой дате перейти?")}<form data-form="journalDate">
+      ${field("Дата", `<input type="date" name="date" value="${key(S.journalDate || TODAY)}" required>`)}
+      ${formErr}<button class="btn btn--primary btn--block">Открыть день</button></form>`,
     confirm: (text, act, id, btn = "Удалить") => `${sheetHead("delete", "var(--bad)", text)}<p style="margin-bottom:16px">Это нельзя отменить.</p>
       <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--danger" data-act="${act}" data-id="${esc(id || "")}" data-confirmed="1">${ic("delete")}${btn}</button></div>`,
     nntu: () => `${sheetHead("download", "var(--primary)", "Расписание НГТУ")}<form data-form="nntu">
@@ -2722,7 +2768,7 @@
     const f = e.target.closest("form[data-auth]"); if (!f) return;
     e.preventDefault();
     const err = f.querySelector(".form-err"), button = f.querySelector('button[type="submit"], button:last-child');
-    const fail = message => { err.textContent = message; err.hidden = false; };
+    const fail = message => showFormError(f, message);
     err.hidden = true;
     if (!accountReady()) return fail("Сервер аккаунтов пока не подключён");
     const v = Object.fromEntries(new FormData(f)), register = f.dataset.auth === "register";
@@ -2755,7 +2801,7 @@
       local.settings.university = v.university.trim();
       const g = await ACCOUNT_API.groups.create(v.title.trim(), local, v.university.trim());
       GROUPS.push(g); await bindGroup(g);
-    } catch (x) { err.textContent = x.message || "Не удалось создать группу"; err.hidden = false; }
+    } catch (x) { showFormError(f, x.message || "Не удалось создать группу"); }
     finally { if (f.isConnected) button.disabled = false; }
   });
 
@@ -2768,7 +2814,7 @@
     try {
       await ACCOUNT_API.mail.addImap(BOUND_GROUP.id, { provider: v.provider, login: v.login.trim(), password: v.password, host: v.host.trim() });
       f.reset(); await refreshMail(); toast("Почта подключена");
-    } catch (x) { err.textContent = x.message || "Не удалось подключить почту"; err.hidden = false; }
+    } catch (x) { showFormError(f, x.message || "Не удалось подключить почту"); }
     finally { if (f.isConnected) button.disabled = false; }
   });
 
@@ -2776,10 +2822,19 @@
     const f = e.target.closest("[data-form]"); if (!f) return;
     e.preventDefault();
     const v = Object.fromEntries(new FormData(f)), id = f.dataset.id;
-    const err = msg => { const p = f.querySelector(".form-err"); if (p) { p.textContent = msg; p.hidden = false; } };
+    const alert = $(".form-err", f);
+    if (alert) alert.hidden = true;
+    const err = msg => showFormError(f, msg);
     const trim = s => (s || "").trim();
     let msg = "Сохранено", go = null;
     switch (f.dataset.form) {
+      case "journalDate": {
+        const date = parseISO(v.date);
+        if (!date || key(date) !== v.date) return err("Выберите дату");
+        closeSheet();
+        goJournal(date);
+        return;
+      }
       case "setupIdentity": {
         if (!trim(v.group) || !trim(v.university)) return err("Укажите группу и учебное заведение");
         DB.settings.group = trim(v.group); DB.settings.university = trim(v.university);
@@ -2944,7 +2999,7 @@
         if (!id) { DB.oneoff.push(o); msg = "Пара добавлена на " + fmtDate(parseISO(v.date)); }
         ensureTeacher(o.teacher);
         if (f.dataset.mark) { go = `#mark/${o.id}/${o.date}`; msg = ""; }
-        else { S.journalDate = parseISO(v.date); }
+        else { go = journalHref(parseISO(v.date)); }
         break;
       }
       case "move": {
@@ -2966,7 +3021,7 @@
           DB.overrides[attKey(d, l.id)] = { cancel: true, moved_to: oid, src: "manual" };
         }
         msg = same(nd, d) ? `Перенесено на ${v.num} пару` : `Перенесено на ${fmtShort(nd)}, ${v.num} пару`;
-        S.journalDate = nd; break;
+        go = journalHref(nd); break;
       }
       case "student": {
         if (!trim(v.name)) return err("Укажите фамилию и имя");
@@ -3036,7 +3091,8 @@
     }
     const saved = f.dataset.form === "extra" || persist();
     closeSheet(); if (msg && saved) toast(msg);
-    if (go) location.hash = go; else render(true);
+    if (go && location.hash !== go) location.hash = go;
+    else render(true);
   });
 
   /* ---------- действия ---------- */
@@ -3089,18 +3145,10 @@
     },
     closeSheet: closeSheet,
     form: el => openSheet(FORMS[el.dataset.f](el.dataset.id)),
-    pickDate: () => {
-      const inp = document.createElement("input"); inp.type = "date"; inp.value = key(S.journalDate || TODAY);
-      inp.style.cssText = "position:fixed;opacity:0;pointer-events:none;top:0;left:0"; document.body.append(inp);
-      inp.addEventListener("change", () => { const d = parseISO(inp.value); if (d) { S.journalDate = d; render(true); } inp.remove(); });
-      inp.addEventListener("blur", () => setTimeout(() => inp.remove(), 300));
-      if (inp.showPicker) { try { inp.showPicker(); } catch (e) { inp.click(); } } else inp.click();
-    },
-    schedTomorrow: () => { S.journalDate = addDays(TODAY, 1); },
     sgPick: (el, e) => { e.stopPropagation(); S.sgPick[el.dataset.k] = Number(el.dataset.i); render(true); return true; },
-    journalShift: el => { S.journalDate = addDays(S.journalDate || TODAY, Number(el.dataset.n)); render(true); },
-    journalDay: el => { S.journalDate = parseISO(el.dataset.d); render(true); },
-    journalToday: () => { S.journalDate = TODAY; render(true); },
+    journalShift: el => goJournal(addDays(S.journalDate || TODAY, Number(el.dataset.n))),
+    journalDay: el => goJournal(parseISO(el.dataset.d)),
+    journalToday: () => goJournal(TODAY),
     mark: el => {
       const sid = el.dataset.id, v = MARK_NEXT[MK.rec.marks[sid]];
       MK.rec.marks[sid] = v; storeRec();
@@ -3360,6 +3408,7 @@
       el.insertAdjacentHTML("beforebegin", sgField(n)); f.querySelector(`[name="g${n}"]`).focus();
     },
     taskTab: el => { S.taskTab = el.dataset.t; render(true); },
+    showOpenTasks: () => { S.taskTab = "open"; S.taskKind = ""; },
     taskKind: el => { S.taskKind = el.dataset.k; render(true); },
     taskDone: el => { const t = DB.tasks.find(x => x.id === el.dataset.id); t.done = !t.done; persist(); render(true); toast(t.done ? "Готово" : "Возвращено в работу"); },
     clearDone: el => {
