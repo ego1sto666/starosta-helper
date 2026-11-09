@@ -63,6 +63,24 @@ class ApiTest(unittest.TestCase):
         conflict = c.put(f"/groups/{gid}/data", headers=H, json={"rev": 1, "data": data})
         self.assertEqual(conflict.status_code, 409)
         self.assertEqual(conflict.json()["detail"]["rev"], 2)
+        invalid = c.put(f"/groups/{gid}/data", headers=H, json={"rev": 2, "data": {"students": [None]}})
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(c.get(f"/groups/{gid}/data").json()["rev"], 2)
+
+        # Из двух одновременных сохранений одной ревизии принимается ровно одно.
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        barrier = Barrier(2)
+
+        def save(tag):
+            barrier.wait(timeout=5)
+            return c.put(f"/groups/{gid}/data", headers=H, json={"rev": 2, "data": {**data, "tag": tag}})
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(save, ["a", "b"]))
+        self.assertEqual(sorted(response.status_code for response in responses), [200, 409])
+        self.assertEqual(c.get(f"/groups/{gid}/data").json()["rev"], 3)
 
         # Неверный пароль приложения не сохраняется; подключённый ящик виден только группе.
         from unittest.mock import MagicMock, patch

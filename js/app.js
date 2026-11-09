@@ -84,11 +84,42 @@
   let DB = null;             // все данные группы (формат data.json)
   const DATA_KEY = "starosta.data";
   let activeDataKey = DATA_KEY;
+  let storageProblem = null, saveFailed = false, editVersion = 0;
   // пример для гостей сайта: список и расписание группы 26-ИВТ-2-1, отметки расставляются случайно
   const DEMO_URL = "demo/group.json";
   // ссылка на Google Форму с отзывами; если пусто — кнопки «Оценить» не показываются
   const FEEDBACK_URL = "https://forms.gle/VsF3DQgE2heuuHsg7";
   const isDemo = () => !!(DB && DB.settings.demo);
+
+  const collections = ["students", "teachers", "lessons", "tasks", "events", "works", "funds", "exams", "sick", "docs", "polls", "templates", "oneoff"];
+  const isRecord = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  function validateData(data) {
+    const invalid = () => { throw new Error("Неверная структура данных группы"); };
+    if (!isRecord(data) || (data.settings !== undefined && !isRecord(data.settings))) invalid();
+    for (const key of collections) {
+      const list = data[key];
+      if (list !== undefined && (!Array.isArray(list) || list.some(item => !isRecord(item)))) invalid();
+    }
+    for (const key of ["attendance", "overrides"]) {
+      if (data[key] !== undefined && (!isRecord(data[key]) || Object.values(data[key]).some(item => !isRecord(item)))) invalid();
+    }
+    for (const rec of Object.values(data.attendance || {})) {
+      if (!isRecord(rec.marks)) invalid();
+    }
+    for (const poll of data.polls || []) {
+      if (!Array.isArray(poll.options) || poll.options.some(option => typeof option !== "string")) invalid();
+    }
+    for (const lesson of [...(data.lessons || []), ...(data.oneoff || [])]) {
+      if (typeof lesson.subject !== "string" || [lesson.start, lesson.end].some(value => value != null && typeof value !== "string")) invalid();
+    }
+    const settings = data.settings || {};
+    for (const field of ["group", "nntu_group"]) {
+      if (settings[field] != null && typeof settings[field] !== "string") invalid();
+    }
+    if (settings.own_split != null && (!Array.isArray(settings.own_split) || settings.own_split.some(value => typeof value !== "string"))) invalid();
+    if (settings.semesters != null && (!Array.isArray(settings.semesters) || settings.semesters.some(value => !isRecord(value)))) invalid();
+    return data;
+  }
 
   // недостающие поля — как Store._load в main.py
   function normalize(d) {
@@ -98,12 +129,11 @@
     d.settings.group ??= "";
     if (!Array.isArray(d.settings.bells) || !d.settings.bells.length) d.settings.bells = ["08:00-09:35", "09:45-11:20", "11:35-13:10", "13:40-15:15", "15:25-17:00"];
     // works — сдачи работ, funds — сборы денег, docs — документы, exams — сессия, sick — больничные
-    for (const k of ["students", "teachers", "lessons", "tasks", "events", "works", "funds", "exams", "sick", "docs", "polls", "templates"]) if (!Array.isArray(d[k])) d[k] = [];
+    for (const k of collections) if (!Array.isArray(d[k])) d[k] = [];
     if (!d.attendance || typeof d.attendance !== "object") d.attendance = {};
     // изменения на конкретные даты: "YYYY-MM-DD|id пары" → { cancel, moved_to, room, teacher, src: manual|nntu }
     if (!d.overrides || typeof d.overrides !== "object" || Array.isArray(d.overrides)) d.overrides = {};
     // разовые пары (перенесённые и добавленные): { id, date, subject, num, kind, room, teacher, from?, src }
-    if (!Array.isArray(d.oneoff)) d.oneoff = [];
     // раньше было два семестра: берём тот, что идёт сейчас или начнётся следующим, и только его пары
     if (Array.isArray(d.settings.semesters)) {
       const old = d.settings.semesters.map((x, i) => ({ n: i + 1, a: parseISO(x.start), z: parseISO(x.end), odd: x.first_week_odd !== false })).filter(x => x.a && x.z);
@@ -133,20 +163,48 @@
   }
 
   function loadData() {
-    try { const raw = localStorage.getItem(activeDataKey); DB = raw ? normalize(JSON.parse(raw)) : null; }
-    catch (e) { DB = null; }
+    let raw = null;
+    storageProblem = null;
+    try {
+      raw = localStorage.getItem(activeDataKey);
+      DB = raw === null ? null : normalize(validateData(JSON.parse(raw)));
+    } catch {
+      DB = null;
+      storageProblem = { raw };
+    }
     return !!DB;
   }
 
-  // каждое изменение данных проходит через persist()
-  function persist() {
-    try { localStorage.setItem(activeDataKey, JSON.stringify(DB)); }
-    catch (e) { toast("Не удалось сохранить: в браузере нет места или запрещено хранение. Скачайте копию данных в настройках.", "info"); return; }
+  function writeData(data) {
+    try { localStorage.setItem(activeDataKey, JSON.stringify(data)); }
+    catch {
+      toast("Не удалось сохранить данные. Проверьте свободное место и настройки браузера.", "info");
+      return false;
+    }
+    return true;
+  }
+  function afterSave() {
+    const hadFailure = saveFailed;
+    saveFailed = false;
+    if (hadFailure) showSaveWarning();
     // просим браузер не удалять данные при нехватке места (молча, один раз)
     if (!persist.asked && navigator.storage && navigator.storage.persist) { persist.asked = true; navigator.storage.persist().catch(() => {}); }
     if (SYNC && !SYNC_SILENT) SYNC.changed();
   }
-  function setDB(d) { DB = normalize(d); MK = null; persist(); }
+  // Каждое изменение данных проходит через persist().
+  function persist() {
+    editVersion++;
+    if (!writeData(DB)) { saveFailed = true; showSaveWarning(); return false; }
+    afterSave();
+    return true;
+  }
+  function setDB(d) {
+    const next = normalize(validateData(d));
+    if (!writeData(next)) return false;
+    DB = next; MK = null; storageProblem = null;
+    afterSave();
+    return true;
+  }
 
   // давно не скачивали копию — напомнить (данные живут только в этом браузере)
   const BACKUP_DAYS = 14;
@@ -536,12 +594,17 @@
       const o = old.find(o => !used.has(o) && k(o) === k(n) && (!exact || (o.week || "all") === n.week));
       if (o) { used.add(o); pair.set(i, o); }
     });
-    const plan = { group: res.group, add: [], upd: [], del: old.filter(o => !used.has(o)), same: 0, bells: null };
+    const fullSchedule = res.weeks.length > 1;
+    const plan = { source: DB, group: res.group, add: [], upd: [], del: fullSchedule ? old.filter(o => !used.has(o)) : [], same: 0, bells: null };
     fresh.forEach((n, i) => {
       const o = pair.get(i);
       if (!o) return plan.add.push(n);
       // своё время пары, заданное вручную, не трогаем, если сайт время не указал
-      const ch = NNTU_FIELDS.filter(f => (f === "start" || f === "end") ? n.start && (o[f] || "") !== n[f] : ((o[f] || (f === "week" ? "all" : "")) !== n[f]));
+      const ch = NNTU_FIELDS.filter(f => {
+        if (f === "week" && !fullSchedule) return false;
+        if (f === "start" || f === "end") return n.start && (o[f] || "") !== n[f];
+        return (o[f] || (f === "week" ? "all" : "")) !== n[f];
+      });
       ch.length ? plan.upd.push({ o, n, ch }) : plan.same++;
     });
     if (res.bells.length && res.bells.join() !== DB.settings.bells.join()) plan.bells = res.bells;
@@ -569,6 +632,7 @@
   // загрузить расписание группы; onDone(res) — после успешной загрузки
   async function loadNntu(form, group, onDone) {
     const err = form.querySelector(".form-err"), btn = form.querySelector("button:not([type=button])");
+    const dataBefore = DB;
     const say = msg => { if (err) { err.textContent = msg; err.hidden = !msg; } };
     group = NNTU.normGroup(group);
     if (!group) return say("Укажите номер группы");
@@ -577,7 +641,7 @@
     try { res = await NNTU.schedule(group, TODAY); }
     catch (e) { say(NNTU_ERR.net); }
     if (btn) { btn.disabled = false; btn.innerHTML = label; }
-    if (!res) return;
+    if (!res || !form.isConnected || DB !== dataBefore) return;
     if (!res.weeks.some(w => w.lessons.length)) return say(NNTU_ERR.empty(group));
     onDone(res);
   }
@@ -637,16 +701,17 @@
   async function autoCheck(force) {
     if (!DB || !nntuAvailable() || !DB.settings.nntu_group || (!force && DB.settings.nntu_checked === key(TODAY))) return false;
     if (!force && navigator.onLine === false) return false;
+    const dataBefore = DB, group = DB.settings.nntu_group;
     let res;
     try { res = await NNTU.schedule(DB.settings.nntu_group, TODAY); } catch (e) { if (force) toast(NNTU_ERR.net, "info"); return false; }
-    if (!DB || !res.weeks.some(w => w.lessons.length)) return false;
+    if (DB !== dataBefore || DB.settings.nntu_group !== group || !res.weeks.some(w => w.lessons.length)) return false;
     const changes = liveChanges(res);
-    LIVE = { changes, plan: nntuPlan(res), sig: liveSig(changes) };
+    LIVE = { source: DB, changes, plan: nntuPlan(res), sig: liveSig(changes) };
     DB.settings.nntu_checked = key(TODAY); persist();
     if (sheet.hidden) render(true);
     return true;
   }
-  const liveNews = () => LIVE && LIVE.changes.length && LIVE.sig !== DB.settings.nntu_seen;
+  const liveNews = () => LIVE?.source === DB && LIVE.changes.length && LIVE.sig !== DB.settings.nntu_seen;
 
   function fillGroups() {
     NNTU.groups().then(list => {
@@ -655,7 +720,7 @@
   }
 
   /* ================= ЭКРАНЫ ================= */
-  const SCREENS = {};
+  const SCREENS = Object.create(null);
   const groupName = () => DB.settings.group || "Группа";
 
   /* ----- Сегодня ----- */
@@ -1483,6 +1548,7 @@
   async function loadGroups() { GROUPS = await ACCOUNT_API.groups.list(); }
   async function bindGroup(group, navigate = true) {
     if (!ACCOUNT || !GROUPS.some(g => g.id === group.id)) throw Error("Нет доступа к этой группе");
+    if (saveFailed) throw Error("Сначала сохраните или скачайте изменения текущей группы");
     if (SYNC) SYNC.stop(); SYNC = null;
     BOUND_GROUP = group; activeDataKey = cloudKey(ACCOUNT.id, group.id);
     MAIL_STATE = { groupId: group.id, items: [], sources: [], loading: false, loaded: false, error: "" };
@@ -1491,14 +1557,25 @@
     let instance;
     const currentGroup = () => BOUND_GROUP?.id === group.id && SYNC === instance;
     instance = ACCOUNT_API.createSync({ groupId: group.id, getData: () => currentGroup() ? DB : null,
-      setData: d => { if (!currentGroup()) return; SYNC_SILENT = true; try { DB = normalize(d); persist(); } finally { SYNC_SILENT = false; } if (location.hash !== "#account") render(true); },
+      validateData,
+      setData: d => {
+        if (!currentGroup()) return;
+        SYNC_SILENT = true;
+        try { if (!setDB(d)) throw Error("Не удалось сохранить копию группы на устройстве"); }
+        finally { SYNC_SILENT = false; }
+        if (location.hash !== "#account") render(true);
+      },
       snapshot, onSnapshot: value => { if (currentGroup()) store.set(snapshotKey(ACCOUNT.id, group.id), value); },
       onState: state => { if (!currentGroup()) return; SYNC_STATE = state; if (state === "error" || state === "offline") toast("Группа сохранена на этом устройстве — синхронизация позже", "wifioff"); } });
     SYNC = instance;
     store.set("activeCloud", { uid: ACCOUNT.id, gid: group.id });
     try { await instance.pull(); }
-    catch (e) { SYNC_STATE = "offline"; if (!DB) { SYNC.stop(); SYNC = null; BOUND_GROUP = null; activeDataKey = DATA_KEY; loadData(); throw e; } }
-    if (navigate) { location.hash = DB?.settings?.setup_step ? "#setup" : "#home"; render(); }
+    catch (e) {
+      if (!currentGroup()) return;
+      SYNC_STATE = e.status === 0 ? "offline" : "error";
+      if (!DB) { instance.stop(); SYNC = null; BOUND_GROUP = null; activeDataKey = DATA_KEY; loadData(); throw e; }
+    }
+    if (navigate && currentGroup()) { location.hash = DB?.settings?.setup_step ? "#setup" : "#home"; render(); }
   }
   async function restoreAccount() {
     if (!accountReady()) return;
@@ -1557,7 +1634,10 @@
       const [items, sources] = await Promise.all([ACCOUNT_API.mail.inbox(groupId), ACCOUNT_API.mail.sources(groupId)]);
       if (BOUND_GROUP?.id !== groupId) return;
       MAIL_STATE = { groupId, items, sources, loading: false, loaded: true, error: "" };
-    } catch (e) { MAIL_STATE = { ...MAIL_STATE, loading: false, loaded: true, error: e.message || "Почта недоступна" }; }
+    } catch (e) {
+      if (BOUND_GROUP?.id !== groupId) return;
+      MAIL_STATE = { ...MAIL_STATE, loading: false, loaded: true, error: e.message || "Почта недоступна" };
+    }
     if (location.hash.startsWith("#mail")) render(true);
   }
   SCREENS.mail = () => {
@@ -2082,15 +2162,49 @@
     draw(keepScroll);
   }
   function draw(keepScroll) {
+    try { drawScreen(keepScroll); }
+    catch (error) {
+      console.error("Не удалось открыть экран", error);
+      current = recoveryScreen(true);
+      topbar.textContent = "";
+      nav.textContent = "";
+      app.classList.add("is-welcome");
+      fab.hidden = true;
+      actionbar.hidden = true;
+      view.innerHTML = current.html;
+      showSaveWarning();
+    }
+  }
+  function recoveryScreen(screenError = false) {
+    return { title: "Восстановление", welcome: true, html: `<div class="welcome"><section class="card stack" role="alert">
+      <h1>${screenError ? "Не удалось открыть экран" : "Не удалось прочитать данные группы"}</h1>
+      <p>${screenError ? "Попробуйте вернуться на главный экран. Если ошибка повторится, скачайте копию данных." : "Можно скачать исходные данные и загрузить исправную резервную копию."}</p>
+      <div class="btn-row">
+        ${DB || storageProblem?.raw != null ? '<button class="btn btn--soft" data-act="recoverExport">Скачать данные</button>' : ""}
+        <button class="btn btn--soft" data-act="importJson">Загрузить копию</button>
+        ${screenError ? '<button class="btn btn--primary" data-act="recoverHome">На главную</button>' : '<button class="btn btn--danger" data-act="wipe">Начать заново</button>'}
+      </div></section></div>` };
+  }
+  function showSaveWarning() {
+    const warning = $("#save-warning");
+    if (!saveFailed || LOCKED) { warning?.remove(); return; }
+    if (warning) return;
+    view.insertAdjacentHTML("afterbegin", `<section class="card stack" id="save-warning" role="alert">
+      <p><b>Изменения пока в памяти.</b> Перед закрытием страницы скачайте копию или повторите сохранение.</p>
+      <div class="btn-row"><button class="btn btn--soft" data-act="recoverExport">Скачать копию</button>
+      <button class="btn btn--soft" data-act="retrySave">Сохранить ещё раз</button></div></section>`);
+  }
+  function drawScreen(keepScroll) {
     // #demo — прямая ссылка на пример для гостей
-    if (location.hash === "#demo") { history.replaceState(null, "", "#home"); if (isDemo() && window.STAROSTA_PREVIEW) { ACT.demoApply(); return; } if (!isDemo()) { ACT.demo(); if (!DB) return; } }
+    if (location.hash === "#demo" && !LOCKED && !storageProblem) { history.replaceState(null, "", "#home"); if (isDemo() && window.STAROSTA_PREVIEW) { ACT.demoApply(); return; } if (!isDemo()) { ACT.demo(); if (!DB) return; } }
     if (DB && location.hash === "#now") history.replaceState(null, "", nowRoute());
     if (DB?.settings?.setup_step && (!location.hash || location.hash === "#home")) history.replaceState(null, "", "#setup");
     const [name, ...args] = (location.hash.slice(1) || "home").split("/");
     if (name !== "mark") MK = null;
-    current = LOCKED ? lockScreen() : (name === "account" ? SCREENS.account(args[0]) : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen());
+    current = LOCKED ? lockScreen() : storageProblem ? recoveryScreen() : (name === "account" ? SCREENS.account(args[0]) : DB ? (SCREENS[name] || SCREENS.home)(...args.map(a => { try { return decodeURIComponent(a); } catch (e) { return a; } })) : welcomeScreen());
     renderTopbar(current); renderNav(current.nav || name);
     view.innerHTML = (isDemo() && !LOCKED && !current.focus ? demoStrip() : "") + current.html;
+    showSaveWarning();
     app.classList.toggle("is-focus", !!current.focus);
     app.classList.toggle("is-welcome", !!current.welcome);
     fab.hidden = !current.fab; fab.dataset.kind = current.fab || "";
@@ -2891,21 +3005,22 @@
       }
       case "groupName": DB.settings.group = trim(v.group); break;
     }
-    if (f.dataset.form !== "extra") persist();
-    closeSheet(); if (msg) toast(msg);
+    const saved = f.dataset.form === "extra" || persist();
+    closeSheet(); if (msg && saved) toast(msg);
     if (go) location.hash = go; else render(true);
   });
 
   /* ---------- действия ---------- */
   const confirmed = el => el.dataset.confirmed === "1";
   const ACT = {
-    startWizard: () => { setDB({ settings: { setup_step: 1 } }); location.hash = "#setup"; render(); },
+    startWizard: () => { if (setDB({ settings: { setup_step: 1 } })) { location.hash = "#setup"; render(); } },
     wizardRoster: () => openSheet(FORMS.contacts(true)),
     setupNext: () => { DB.settings.setup_step = Math.min(4, (DB.settings.setup_step || 1) + 1); persist(); render(true); },
     setupBack: () => { DB.settings.setup_step = Math.max(1, (DB.settings.setup_step || 1) - 1); persist(); render(true); },
     setupLater: () => { DB.settings.setup_step = 0; persist(); location.hash = "#home"; render(); },
     setupFinish: () => { DB.settings.setup_step = 0; persist(); location.hash = "#home"; render(); },
     accountLogout: async () => {
+      if (saveFailed) return toast("Сначала сохраните изменения текущей группы", "info");
       try { await ACCOUNT_API.auth.logout(); if (SYNC) SYNC.stop(); SYNC = null; BOUND_GROUP = null; GROUPS = []; ACCOUNT = null; ACCOUNT_CHECKED = true;
         MAIL_STATE = { groupId: "", items: [], sources: [], loading: false, loaded: false, error: "" };
         SYNC_STATE = ""; activeDataKey = DATA_KEY; store.set("activeCloud", null); loadData(); render(true); }
@@ -2938,8 +3053,8 @@
         else if (type === "exams") list.push({ id, subject: s.subject || title, kind: "экзамен", date: s.due, time: "", room: "", teacher: s.teacher_name || "", note: title, source_mail: item.id });
         else if (type === "events") list.push({ id, title, kind: "другое", date: s.due, time: "", place: "", text: item.mail.text || "", going: [], source_mail: item.id });
         else list.push({ id, kind: "other", title, subject: s.subject || "", due: due ? s.due : "", text: item.mail.text || "", done: false, created: Math.floor(Date.now() / 1000), source_mail: item.id });
-        persist();
       }
+      if (!persist()) { el.disabled = false; return; }
       try { await ACCOUNT_API.mail.accept(BOUND_GROUP.id, item.id, type, id); MAIL_STATE.items = MAIL_STATE.items.filter(x => x.id !== item.id); render(true); toast("Добавлено из письма"); }
       catch (e) { el.disabled = false; toast("Запись сохранена. Откройте письмо ещё раз, чтобы подтвердить", "info"); }
     },
@@ -3173,8 +3288,13 @@
     },
     bdaySnooze: () => { DB.settings.bday_snooze = key(TODAY); persist(); closeSheet(); toast("Напомним завтра", "cake"); },
     // ----- автопроверка
-    liveApply: () => { if (LIVE) { liveApply(LIVE.changes); DB.settings.nntu_seen = ""; LIVE = { ...LIVE, changes: [], sig: "" }; persist(); } closeSheet(); render(true); toast("Изменения с сайта НГТУ применены"); },
-    liveDismiss: () => { if (LIVE) { DB.settings.nntu_seen = LIVE.sig; persist(); } closeSheet(); render(true); },
+    liveApply: () => {
+      if (LIVE?.source !== DB) { closeSheet(); return toast("Данные группы изменились. Проверьте расписание ещё раз.", "info"); }
+      liveApply(LIVE.changes); DB.settings.nntu_seen = ""; LIVE = { ...LIVE, changes: [], sig: "" };
+      const saved = persist(); closeSheet(); render(true);
+      if (saved) toast("Изменения с сайта НГТУ применены");
+    },
+    liveDismiss: () => { if (LIVE?.source === DB) { DB.settings.nntu_seen = LIVE.sig; persist(); } closeSheet(); render(true); },
     checkNow: async el => {
       el.disabled = true; el.textContent = "Проверяем…";
       const ok = await autoCheck(true);
@@ -3258,51 +3378,95 @@
       download(new Blob([JSON.stringify(DB, null, 1)], { type: "application/json" }), `староста${g ? "_" + g : ""}_${key(TODAY)}.json`);
       store.set("lastBackup", Date.now()); toast("Копия скачана", "download"); render(true);
     },
+    recoverExport: () => {
+      if (LOCKED) return;
+      const raw = storageProblem?.raw ?? (DB ? JSON.stringify(DB, null, 1) : null);
+      if (raw != null) download(new Blob([raw], { type: "application/json" }), `староста_восстановление_${key(TODAY)}.json`);
+    },
+    recoverHome: () => { history.replaceState(null, "", "#home"); render(true); },
+    retrySave: () => { if (DB && persist()) { showSaveWarning(); toast("Данные сохранены"); } },
     importJson: el => {
       const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json,application/json";
+      const dataKey = activeDataKey;
       inp.addEventListener("change", async () => {
+        const file = inp.files[0];
+        if (!file) return;
+        if (file.size > 16 * 1024 * 1024) return toast("Копия больше 16 МБ. Выберите файл меньшего размера.", "info");
         let d;
-        try { d = JSON.parse(await inp.files[0].text()); if (!d || !Array.isArray(d.students) || !d.settings) throw new Error("shape"); }
-        catch (e) { toast("Это не похоже на файл с данными приложения", "info"); return; }
-        // данные уже есть — сначала спросить
-        if (DB && (DB.students.length || Object.keys(DB.attendance).length)) { PENDING = d; openSheet(FORMS.confirm("Заменить данные этого браузера файлом?", "importApply", "", "Заменить")); return; }
-        PENDING = d; ACT.importApply();
+        try {
+          d = validateData(JSON.parse((await file.text()).replace(/^\uFEFF/, "")));
+          if (!Array.isArray(d.students) || !isRecord(d.settings)) throw new Error("shape");
+          d = normalize(d);
+        } catch { toast("Копия повреждена или не подходит для приложения. Текущие данные сохранены.", "info"); return; }
+        if (activeDataKey !== dataKey || LOCKED) return;
+        PENDING = { data: d, key: dataKey, previous: DB, problem: storageProblem };
+        if (DB || storageProblem) {
+          openSheet(FORMS.confirm(BOUND_GROUP ? "Заменить данные группы файлом? Изменение синхронизируется с сервером." : "Заменить данные этого браузера файлом?", "importApply", "", "Заменить"));
+          return;
+        }
+        ACT.importApply();
       });
       inp.click();
     },
     importApply: () => {
-      if (!PENDING) return;
-      setDB(PENDING); PENDING = null; store.set("lastBackup", Date.now());
+      if (PENDING?.key !== activeDataKey || LOCKED) return;
+      if (PENDING.previous !== DB || PENDING.problem !== storageProblem) {
+        PENDING = null;
+        closeSheet();
+        return toast("Данные группы изменились. Выберите файл ещё раз.", "info");
+      }
+      const recovering = !!storageProblem;
+      if (!setDB(PENDING.data)) return;
+      PENDING = null; store.set("lastBackup", Date.now());
+      if (recovering || location.hash === "#demo") history.replaceState(null, "", "#home");
       closeSheet(); toast(`Данные загружены: студентов ${DB.students.length}, пар ${DB.lessons.length}`); render();
     },
-    startEmpty: () => { setDB({}); render(); toast("Начнём: добавьте студентов и пары"); },
+    startEmpty: () => { if (setDB({})) { render(); toast("Начнём: добавьте студентов и пары"); } },
     demo: () => {
       // свои данные в этом браузере молча не заменяем
-      if (DB && !isDemo() && (DB.students.length || Object.keys(DB.attendance).length)) return openSheet(FORMS.confirm("Открыть пример вместо ваших данных?", "demoApply", "", "Открыть пример"));
+      if (BOUND_GROUP) return toast("Выйдите из аккаунта, чтобы открыть пример", "info");
+      if (DB && !isDemo()) return openSheet(FORMS.confirm("Открыть пример вместо ваших данных?", "demoApply", "", "Открыть пример"));
       ACT.demoApply();
     },
     demoApply: async () => {
+      if (BOUND_GROUP || storageProblem || LOCKED) return;
+      const previous = DB, version = editVersion;
       closeSheet();
       let d;
-      try { const r = await fetch(DEMO_URL, { cache: "no-cache" }); if (!r.ok) throw new Error(r.status); d = await r.json(); }
-      catch (e) { toast("Не удалось загрузить пример. Проверьте интернет", "wifioff"); render(); return; }
-      DB = normalize(d); demoFill(); setDB(DB);
+      try {
+        const r = await fetch(DEMO_URL, { cache: "no-cache", signal: AbortSignal.timeout?.(12000) });
+        if (!r.ok) throw new Error(r.status);
+        d = normalize(validateData(await r.json()));
+        if (!d.settings.demo || !d.students.length) throw new Error("Неверные данные примера");
+        if (DB !== previous || editVersion !== version || BOUND_GROUP || storageProblem || LOCKED || saveFailed) return;
+        DB = d;
+        try { demoFill(); } finally { DB = previous; }
+      } catch { toast("Не удалось загрузить пример. Попробуйте ещё раз.", "wifioff"); render(); return; }
+      if (!setDB(d)) { render(); return; }
       if (location.hash !== "#home") location.hash = "#home"; else render();
       toast(`Пример открыт: ${DB.students.length} студентов, отметки случайные`);
     },
     demoExit: () => {
-      try { localStorage.removeItem(DATA_KEY); } catch (e) { /* ничего */ }
+      try { localStorage.removeItem(DATA_KEY); } catch { return toast("Не удалось удалить пример из браузера", "info"); }
+      saveFailed = false;
       DB = null; MK = null; location.hash = ""; render();
     },
     nntuApply: () => {
+      if (PLAN?.source !== DB) { PLAN = null; closeSheet(); return toast("Данные группы изменились. Загрузите расписание ещё раз.", "info"); }
       if (PLAN && !PLAN.empty) { nntuApply(PLAN); toast("Расписание обновлено"); }
       else if (PLAN) { DB.settings.nntu_group = PLAN.group; DB.settings.nntu_synced = key(TODAY); persist(); }
       PLAN = null; closeSheet(); render(true);
     },
     wipe: el => {
-      if (!confirmed(el)) return openSheet(FORMS.confirm("Удалить все данные группы из этого браузера?", "wipe", "", "Удалить всё"));
-      try { localStorage.removeItem(DATA_KEY); store.set("lastBackup", 0); store.set("pin", null); } catch (e) { /* ничего */ }
-      DB = null; MK = null; closeSheet(); location.hash = ""; render(); toast("Данные удалены", "delete");
+      if (!confirmed(el)) return openSheet(FORMS.confirm("Удалить данные этой группы из браузера?", "wipe", "", "Удалить"));
+      try { localStorage.removeItem(activeDataKey); } catch { return toast("Не удалось удалить данные из браузера", "info"); }
+      if (BOUND_GROUP) {
+        SYNC?.stop(); SYNC = null;
+        store.set(snapshotKey(ACCOUNT.id, BOUND_GROUP.id), null);
+        store.set("activeCloud", null);
+        BOUND_GROUP = null; activeDataKey = DATA_KEY;
+      } else { store.set("lastBackup", 0); store.set("pin", null); }
+      saveFailed = false; loadData(); MK = null; closeSheet(); location.hash = ""; render(); toast("Данные группы удалены из браузера", "delete");
     },
   };
   let PENDING = null;
@@ -3333,14 +3497,22 @@
 
   document.addEventListener("click", e => {
     const el = e.target.closest("[data-act]");
-    if (el && ACT[el.dataset.act]) {
-      const r = ACT[el.dataset.act](el, e);
+    if (el && Object.hasOwn(ACT, el.dataset.act)) {
+      let r;
+      try {
+        r = ACT[el.dataset.act](el, e);
+        if (r?.catch) r.catch(actionError);
+      } catch (error) { e.preventDefault(); actionError(error); return; }
       // у ссылок с действием (например, «Завтра …») переход по href продолжается
       if (!(el.matches("a[href]") && r !== true)) { e.preventDefault(); return; }
     }
     const go = e.target.closest("[data-go]");
     if (go) { e.preventDefault(); location.hash = go.dataset.go; }
   });
+  function actionError(error) {
+    console.error("Не удалось выполнить действие", error);
+    toast("Действие прервалось. Проверьте результат и попробуйте снова.", "info");
+  }
   fab.addEventListener("click", () => openSheet(FORMS[fab.dataset.kind]()));
   // предпросмотр списков по мере ввода; смена «для чего деление» перестраивает форму
   document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="many"], form[data-form="sgLists"]'); if (f) listPreview(f); });
@@ -3401,9 +3573,12 @@
   if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.go) location.hash = e.data.go; });
   // приложение открыто в двух вкладках — изменения из другой подтягиваются сами
   addEventListener("storage", e => {
-    if (e.key !== DATA_KEY) return;
+    if (e.key !== activeDataKey || saveFailed) return;
     loadData(); MK = null;
     if (sheet.hidden) render(true);
+  });
+  addEventListener("beforeunload", e => {
+    if (saveFailed) { e.preventDefault(); e.returnValue = true; }
   });
 
   // вернулись в приложение на следующий день — проверить расписание
@@ -3482,15 +3657,15 @@
     <div class="skeleton" style="height:120px;border-radius:20px"></div></div>`;
   const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
-  if (DB && pinSet()) LOCKED = true;
+  if ((DB || storageProblem || store.get("activeCloud", null)) && pinSet()) LOCKED = true;
   fontsReady.then(async () => {
     await restoreAccount();
     // У гостевого просмотра свои данные в браузере. Обновляем только устаревший
     // пример, чтобы обычная ссылка #home не показывала прежний вымышленный список.
-    if (window.STAROSTA_PREVIEW && (!DB || (isDemo() && DB.settings.preview_version !== window.STAROSTA_PREVIEW_VERSION)))
+    if (!LOCKED && !storageProblem && window.STAROSTA_PREVIEW && (!DB || (isDemo() && DB.settings.preview_version !== window.STAROSTA_PREVIEW_VERSION)))
       await ACT.demoApply();
     else render();
     if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); }
-  });
+  }).catch(error => { actionError(error); render(); });
   addEventListener("online", () => { autoCheck(); if (SYNC) SYNC.pull().catch(() => {}); });
 })();

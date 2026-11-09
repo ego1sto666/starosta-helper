@@ -17,18 +17,25 @@
 
   async function call(method, path, body) {
     if (!BASE) throw new ApiError(0, "Сервер не подключён — данные хранятся только на этом устройстве");
-    let r;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      r = await fetch(BASE + path, {
+      const response = await fetch(BASE + path, {
         method, credentials: "include",
         headers: { "Content-Type": "application/json", "X-Starosta": "1" }, // без этого заголовка сервер не примет изменения
         body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
       });
-    } catch (e) { throw new ApiError(0, "Нет связи с сервером — изменения сохранятся, когда она появится"); }
-    if (r.status === 204) return null;
-    const data = await r.json().catch(() => null);
-    if (!r.ok) throw new ApiError(r.status, data && data.detail);
-    return data;
+      if (response.status === 204) return null;
+      const data = await response.json().catch(() => null);
+      if (controller.signal.aborted) throw new ApiError(0, "Сервер слишком долго отвечает");
+      if (!response.ok) throw new ApiError(response.status, data?.detail);
+      if (data === null) throw new ApiError(502, "Сервер вернул неожиданный ответ");
+      return data;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(0, "Не удалось связаться с сервером. Попробуйте позже.");
+    } finally { clearTimeout(timeout); }
   }
   const get = p => call("GET", p), post = (p, b = {}) => call("POST", p, b), put = (p, b) => call("PUT", p, b), del = p => call("DELETE", p);
   const g = id => `/groups/${encodeURIComponent(id)}`;
@@ -62,11 +69,12 @@
     },
   };
 
-  /* ---------- слияние изменений с двух устройств (трёхстороннее: общая основа, моё, с сервера) ----------
-     По каждой записи с id (студент, пара, дело…) и по каждому ключу журнала/переносов:
+  /* ---------- слияние изменений с двух устройств ----------
+     По каждому полю записи и каждой отметке отдельного студента:
        изменили только у меня → берём моё; только на сервере → берём серверное;
        изменили оба → побеждает моё (я сейчас за экраном), удалили у одного и не трогали у другого → удаляем. */
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const isRecord = v => v !== null && typeof v === "object" && !Array.isArray(v);
   function pick(b, l, r) {
     if (same(l, r)) return l;
     if (same(l, b)) return r;   // у меня без изменений — берём с сервера (в том числе удаление)
@@ -74,59 +82,106 @@
     return l === undefined ? r : l; // изменили оба: моё, но удаление не перебивает чужую правку
   }
   function mergeList(base = [], local = [], remote = []) {
-    const byId = a => new Map(a.filter(x => x && x.id).map(x => [x.id, x]));
+    const byId = a => new Map((Array.isArray(a) ? a : []).filter(x => x && x.id).map(x => [x.id, x]));
     const B = byId(base), L = byId(local), R = byId(remote), out = [];
     const ids = [...R.keys(), ...[...L.keys()].filter(id => !R.has(id))]; // порядок сервера, новые мои — в конец
-    for (const id of ids) { const v = pick(B.get(id), L.get(id), R.get(id)); if (v !== undefined) out.push(v); }
+    for (const id of ids) { const v = mergeValue(B.get(id), L.get(id), R.get(id)); if (v !== undefined) out.push(v); }
     return out;
   }
-  function mergeMap(base = {}, local = {}, remote = {}) {
-    const out = {};
-    for (const k of new Set([...Object.keys(remote), ...Object.keys(local)])) { const v = pick(base[k], local[k], remote[k]); if (v !== undefined) out[k] = v; }
-    return out;
+  function mergeValue(base, local, remote) {
+    if (!isRecord(local) || !isRecord(remote)) return pick(base, local, remote);
+    return mergeMap(isRecord(base) ? base : {}, local, remote, mergeValue);
+  }
+  function mergeMap(base, local, remote, merge) {
+    const keys = new Set([...Object.keys(remote), ...Object.keys(local)]);
+    const entries = [];
+    for (const key of keys) {
+      const read = obj => Object.hasOwn(obj, key) ? obj[key] : undefined;
+      const value = merge(read(base), read(local), read(remote));
+      if (value !== undefined) entries.push([key, value]);
+    }
+    return Object.fromEntries(entries);
   }
   function mergeData(base, local, remote) {
-    base = base || {}; const out = { ...remote };
-    for (const k of new Set([...Object.keys(local), ...Object.keys(remote)])) {
-      const b = base[k], l = local[k], r = remote[k];
-      if (Array.isArray(l) || Array.isArray(r)) out[k] = mergeList(b, l, r);
-      else if ((l && typeof l === "object") || (r && typeof r === "object")) out[k] = mergeMap(b, l, r); // attendance, overrides, settings
-      else out[k] = pick(b, l, r);
-    }
-    return out;
+    return mergeMap(base || {}, local, remote, (b, l, r) => {
+      const list = l ?? r;
+      if (Array.isArray(list) && list.every(x => isRecord(x) && x.id)) return mergeList(b, l, r);
+      return mergeValue(b, l, r);
+    });
   }
 
   /* ---------- синхронизация: отправить через 3 с после последнего изменения, при 409 — слить и повторить ---------- */
-  function createSync({ groupId, getData, setData, snapshot = null, onSnapshot = () => {}, onState = () => {} }) {
-    let rev = snapshot?.rev ?? 0, base = snapshot?.base ?? null, timer = 0, busy = false;
+  function createSync({ groupId, getData, setData, validateData = () => {}, snapshot = null, onSnapshot = () => {}, onState = () => {} }) {
+    let rev = snapshot?.rev ?? 0, base = snapshot?.base ?? null, timer = 0, stopped = false;
+    let pendingPull = null, pendingPush = null, retryDelay = 3000;
     const copy = value => JSON.parse(JSON.stringify(value));
-    async function pull() {
-      const r = await API.groups.pull(groupId), local = getData();
-      const merged = base && local ? mergeData(base, local, r.data) : r.data;
-      rev = r.rev; base = copy(r.data); onSnapshot({ rev, base });
-      if (!same(local, merged)) setData(merged);
-      if (!same(merged, r.data)) schedule(); else onState("ok");
+    function record(revision, data) {
+      rev = revision;
+      base = copy(data);
+      onSnapshot({ rev, base });
     }
-    async function push() {
-      if (busy) return schedule(); busy = true; onState("saving");
+    function applyRemote(response) {
+      if (!Number.isSafeInteger(response?.rev) || response.rev < 0 || !isRecord(response.data))
+        throw new ApiError(502, "Сервер вернул неверную версию данных группы");
+      validateData(response.data);
+      const local = getData();
+      const merged = local ? mergeData(base, local, response.data) : copy(response.data);
+      if (!same(local, merged)) setData(merged);
+      record(response.rev, response.data);
+      return !same(merged, response.data);
+    }
+    async function pullNow() {
+      if (pendingPush) await pendingPush;
+      if (stopped) return;
+      const response = await API.groups.pull(groupId);
+      if (stopped) return;
+      if (applyRemote(response)) schedule(); else onState("ok");
+    }
+    function pull() {
+      if (!pendingPull) pendingPull = pullNow().finally(() => { pendingPull = null; });
+      return pendingPull;
+    }
+    async function pushNow() {
+      if (stopped || !getData()) return;
+      onState("saving");
       try {
         for (let i = 0; i < 3; i++) {
           const mine = copy(getData());
-          try { rev = (await API.groups.push(groupId, rev, mine)).rev; base = mine; onSnapshot({ rev, base }); onState("ok");
-            if (!same(getData(), mine)) schedule(); return; }
-          catch (e) {
+          try {
+            const response = await API.groups.push(groupId, rev, mine);
+            if (stopped) return;
+            if (!Number.isSafeInteger(response?.rev) || response.rev <= rev) throw new ApiError(502, "Сервер вернул неверную версию данных группы");
+            record(response.rev, mine);
+            retryDelay = 3000;
+            onState("ok");
+            if (!same(getData(), mine)) schedule();
+            return;
+          } catch (e) {
+            if (stopped) return;
             if (e.status !== 409) throw e;
-            const merged = mergeData(base, getData(), e.detail.data); rev = e.detail.rev; base = copy(e.detail.data);
-            onSnapshot({ rev, base }); setData(merged);
+            applyRemote(e.detail);
           }
         }
         onState("conflict");
-      } catch (e) { onState(e.status === 0 ? "offline" : "error", e); }
-      finally { busy = false; }
+      } catch (e) {
+        if (stopped) return;
+        onState(e.status === 0 ? "offline" : "error", e);
+        if (e.status === 0 || e.status >= 500) {
+          retryDelay = Math.min(60000, retryDelay * 2);
+          schedule(retryDelay);
+        }
+      }
     }
-    function schedule() { clearTimeout(timer); timer = setTimeout(push, 3000); }
-    function stop() { clearTimeout(timer); timer = 0; }
-    return { pull, push, changed: schedule, stop };
+    function push() {
+      if (pendingPush) return pendingPush;
+      if (pendingPull) return pendingPull.then(push, push);
+      clearTimeout(timer);
+      pendingPush = pushNow().finally(() => { pendingPush = null; });
+      return pendingPush;
+    }
+    function schedule(delay = 3000) { if (!stopped) { clearTimeout(timer); timer = setTimeout(push, delay); } }
+    function stop() { stopped = true; clearTimeout(timer); }
+    return { pull, push, changed: () => schedule(), stop };
   }
 
   window.StarostaAPI = Object.assign(API, { mergeData, createSync });

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -25,6 +25,24 @@ from ..security import new_mail_code, token_hash
 router = APIRouter(tags=["Группы и данные"])
 
 MAX_DATA_BYTES = 5 * 1024 * 1024  # столько же примерно помещается в localStorage
+
+
+def check_group_data(data: dict) -> None:
+    try:
+        size = len(json.dumps(data, ensure_ascii=False, allow_nan=False).encode())
+    except ValueError as exc:
+        raise HTTPException(422, "Некорректные данные группы") from exc
+    if size > MAX_DATA_BYTES:
+        raise HTTPException(413, "Объём данных группы превышает 5 МБ")
+    for key in ("settings", "attendance", "overrides"):
+        if key in data and not isinstance(data[key], dict):
+            raise HTTPException(422, f"Некорректный раздел данных: {key}")
+    for key in ("students", "teachers", "lessons", "oneoff", "tasks", "events", "works", "funds", "exams", "sick", "docs", "polls", "templates"):
+        if key in data and (not isinstance(data[key], list) or any(not isinstance(item, dict) for item in data[key])):
+            raise HTTPException(422, f"Некорректный список: {key}")
+    if any(not isinstance(record, dict) or not isinstance(record.get("marks"), dict)
+           for record in data.get("attendance", {}).values()):
+        raise HTTPException(422, "Некорректные отметки в журнале")
 
 
 class GroupIn(BaseModel):
@@ -41,6 +59,7 @@ def group_out(g: Group, role: str) -> dict:
 
 @router.post("/groups", status_code=201)
 def create_group(body: GroupIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    check_group_data(body.data or {})
     g = Group(title=body.title.strip(), university=body.university.strip() or "Не указан", nntu_group=body.nntu_group.strip(), mail_code=new_mail_code(body.title))
     db.add(g)
     db.flush()
@@ -62,25 +81,33 @@ def my_groups(user: User = Depends(current_user), db: Session = Depends(get_db))
 def get_data(group_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     membership(db, user, group_id)
     gd = db.get(GroupData, group_id)
+    if gd is None:
+        raise HTTPException(404, "Данные группы не найдены")
     return {"rev": gd.rev, "data": gd.data, "updated_at": gd.updated_at.isoformat()}
 
 
 class DataIn(BaseModel):
-    rev: int  # версия, от которой сделаны изменения
+    rev: int = Field(ge=0, le=2**53 - 2)  # следующая версия должна точно читаться в JavaScript
     data: dict
 
 
 @router.put("/groups/{group_id}/data")
 def put_data(group_id: str, body: DataIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     membership(db, user, group_id, ("head", "deputy"))
-    gd = db.get(GroupData, group_id, with_for_update=True)
-    if body.rev != gd.rev:
-        raise HTTPException(409, {"message": "Данные изменились на другом устройстве", "rev": gd.rev, "data": gd.data})
-    if len(json.dumps(body.data, ensure_ascii=False).encode()) > MAX_DATA_BYTES:
-        raise HTTPException(413, "Слишком много данных — удалите старые фото справок")
-    gd.data, gd.rev, gd.updated_at, gd.updated_by = body.data, gd.rev + 1, now(), user.id
-    db.commit()
-    return {"rev": gd.rev}
+    check_group_data(body.data)
+    result = db.execute(
+        update(GroupData)
+        .where(GroupData.group_id == group_id, GroupData.rev == body.rev)
+        .values(data=body.data, rev=body.rev + 1, updated_at=now(), updated_by=user.id)
+    )
+    if result.rowcount == 1:
+        db.commit()
+        return {"rev": body.rev + 1}
+    db.rollback()
+    gd = db.get(GroupData, group_id)
+    if gd is None:
+        raise HTTPException(404, "Данные группы не найдены")
+    raise HTTPException(409, {"message": "Данные изменились на другом устройстве", "rev": gd.rev, "data": gd.data})
 
 
 class InviteIn(BaseModel):

@@ -5,7 +5,7 @@
 const R = [], errors = [];
 const log = (...a) => { const s = a.join(" "); R.push(s); console.log("T: " + s); };
 window.addEventListener("error", e => errors.push(e.message));
-try {
+async function run() {
   const M = window.StarostaAPI.mergeData;
   log("0 enabled без сервера:", window.StarostaAPI.enabled());
   const base = {
@@ -36,7 +36,41 @@ try {
   log("6 delete vs edit:", M(base, l3, r3).students.map(s => s.name).join(", "));
   // первая синхронизация без общей основы — ничего не теряем
   log("7 no base:", M(null, { students: [{ id: "x", name: "Х" }] }, { students: [{ id: "y", name: "У" }] }).students.map(s => s.name).join(", "));
-} catch (e) { log("FAIL", e.message); }
-log("ERRORS:", errors.join(" | ") || "нет");
-fetch("/__save/result-sync-merge.txt", { method: "POST", body: R.join("\n") }).then(() => console.log("T: DONE"));
+
+  const lesson = "2026-11-06|l1";
+  const l4 = clone(base), r4 = clone(base);
+  l4.attendance[lesson].marks.b = "н";
+  r4.attendance[lesson].marks.c = "у";
+  const merged = M(base, l4, r4).attendance[lesson].marks;
+  if (merged.b !== "н" || merged.c !== "у" || merged.a !== "+") throw Error("Отметки одной пары потерялись");
+  log("8 OK две правки одной пары сохранены");
+
+  const api = window.StarostaAPI;
+  let current = l4, serverData = { rev: 2, data: r4 }, finish, writes = 0, applied = 0;
+  api.groups.pull = () => new Promise(resolve => { finish = resolve; });
+  api.groups.push = async (_group, rev, data) => {
+    if (rev !== serverData.rev) throw new api.ApiError(409, serverData);
+    serverData = { rev: rev + 1, data };
+    writes++;
+    return { rev: serverData.rev };
+  };
+  const options = { groupId: "test", getData: () => current, setData: d => { current = d; applied++; }, snapshot: { rev: 1, base } };
+  const stale = api.createSync(options);
+  const late = stale.pull();
+  stale.stop();
+  finish(serverData);
+  await late;
+  if (applied) throw Error("Ответ закрытой группы применён");
+
+  const active = api.createSync(options);
+  await active.push();
+  active.stop();
+  if (writes !== 1 || serverData.data.attendance[lesson].marks.b !== "н" || serverData.data.attendance[lesson].marks.c !== "у")
+    throw Error("Конфликт версий перезаписал отметки");
+  log("9 OK просроченный ответ отброшен, конфликт версий разрешён");
+}
+run().catch(e => { errors.push(e.message); log("FAIL", e.message); }).finally(() => {
+  log("ERRORS:", errors.join(" | ") || "нет");
+  fetch("/__save/result-sync-merge.txt", { method: "POST", body: R.join("\n") });
+});
 </script>

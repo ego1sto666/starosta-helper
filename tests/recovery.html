@@ -1,0 +1,76 @@
+<!doctype html><meta charset="utf-8"><title>Восстановление данных</title>
+<iframe id="app" style="width:390px;height:850px;border:0"></iframe>
+<script>
+const report = [], errors = [], frame = document.querySelector("#app");
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+const key = "starosta.data", raw = '{"students":[null],"settings":{"group":"Исходная копия"}}';
+const one = selector => frame.contentDocument.querySelector(selector);
+function check(ok, label) { report.push((ok ? "OK " : "FAIL ") + label); if (!ok) errors.push(label); }
+async function until(fn) {
+  for (let i = 0; i < 70; i++) { const value = fn(); if (value) return value; await wait(80); }
+  throw Error("Действие не завершилось");
+}
+async function run() {
+  localStorage.clear();
+  localStorage.setItem(key, raw);
+  frame.src = "/index.html#demo";
+  await new Promise(resolve => frame.onload = resolve);
+  const win = frame.contentWindow;
+  const exportButton = await until(() => one('[data-act="recoverExport"]'));
+  check(localStorage.getItem(key) === raw && !one('[data-act="startWizard"]'), "повреждённая копия открывает восстановление, пример её не заменяет");
+  let exported;
+  win.URL.createObjectURL = blob => { exported = blob; return "about:blank"; };
+  const anchorClick = win.HTMLAnchorElement.prototype.click;
+  win.HTMLAnchorElement.prototype.click = function () { if (!this.download) anchorClick.call(this); };
+  exportButton.click();
+  check(await exported.text() === raw, "повреждённые данные можно скачать без изменений");
+
+  let contents = JSON.stringify({ settings: { group: "Новая группа" }, students: [], attendance: { bad: null } });
+  const click = win.HTMLInputElement.prototype.click;
+  win.HTMLInputElement.prototype.click = function () {
+    if (this.type !== "file") return click.call(this);
+    const files = new win.DataTransfer();
+    files.items.add(new win.File([contents], "backup.json", { type: "application/json" }));
+    this.files = files.files;
+    this.dispatchEvent(new win.Event("change"));
+  };
+  one('[data-act="importJson"]').click();
+  await until(() => one("#toast")?.textContent.includes("Копия повреждена"));
+  check(localStorage.getItem(key) === raw, "файл с повреждённым журналом отклонён");
+
+  contents = JSON.stringify({ settings: { group: "Новая группа" }, students: [] });
+  one('[data-act="importJson"]').click();
+  const confirm = await until(() => one('#sheet [data-act="importApply"][data-confirmed]'));
+  const setItem = win.Storage.prototype.setItem;
+  let outOfSpace = true;
+  win.Storage.prototype.setItem = function (name, value) {
+    if (name === key && outOfSpace) throw new win.DOMException("Quota", "QuotaExceededError");
+    return setItem.call(this, name, value);
+  };
+  confirm.click();
+  check(localStorage.getItem(key) === raw && !one("#sheet").hidden, "импорт при нехватке места оставляет исходную копию и позволяет повторить");
+  outOfSpace = false;
+  confirm.click();
+  await until(() => one(".home-top") && one("#sheet").hidden);
+  check(JSON.parse(localStorage.getItem(key)).settings.group === "Новая группа", "исправная копия восстанавливает группу");
+  win.location.hash = "#settings";
+  (await until(() => one('[data-f="groupName"]'))).click();
+  const form = await until(() => one('form[data-form="groupName"]'));
+  form.group.value = "Изменение в памяти";
+  outOfSpace = true;
+  form.requestSubmit();
+  const retry = await until(() => one('[data-act="retrySave"]') && one("#sheet").hidden && one('[data-act="retrySave"]'));
+  check(JSON.parse(localStorage.getItem(key)).settings.group === "Новая группа", "ошибка записи оставляет последнюю сохранённую версию");
+  outOfSpace = false;
+  retry.click();
+  check(JSON.parse(localStorage.getItem(key)).settings.group === "Изменение в памяти" && !one("#save-warning"), "повтор сохраняет правки из памяти и убирает предупреждение");
+
+  const wideRow = Array(257).fill(null);
+  wideRow[256] = ["Лишний столбец", win.XLSX.S.TEXT];
+  const oversizedSheet = win.XLSX.blob([{ name: "Список", rows: [wideRow] }]);
+  const rejected = await win.XLSX.readRows(oversizedSheet).then(() => false, error => error.message.includes("256"));
+  check(rejected, "слишком широкая таблица отклонена до построения списка");
+}
+run().catch(error => { errors.push(error.message); report.push("FAIL " + error.message); })
+  .finally(() => fetch("/__save/result-recovery.txt", { method: "POST", body: [...report, "ERRORS: " + (errors.join(" | ") || "нет")].join("\n") }));
+</script>

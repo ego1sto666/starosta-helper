@@ -125,28 +125,59 @@ ${xf(0, 1, 5, 1, C)}
   }
 
   /* ---------- чтение .xlsx: строки первого листа (для загрузки списков) ---------- */
-  async function inflate(bytes) {
+  const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
+  async function inflate(bytes, limit) {
     const ds = new DecompressionStream("deflate-raw");
-    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer());
+    const reader = new Blob([bytes]).stream().pipeThrough(ds).getReader();
+    const chunks = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > limit) {
+          await reader.cancel();
+          throw new Error("Таблица слишком большая после распаковки");
+        }
+        chunks.push(value);
+      }
+    } finally { reader.releaseLock(); }
+    const result = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+    return result;
   }
   async function unzip(buf, want) {
     const b = new Uint8Array(buf), v = new DataView(buf), dec = new TextDecoder(), out = {};
+    let remaining = MAX_IMPORT_BYTES;
     let e = b.length - 22; while (e >= 0 && v.getUint32(e, true) !== 0x06054b50) e--;
     if (e < 0) throw new Error("not a zip");
     let p = v.getUint32(e + 16, true);
     for (let i = 0, n = v.getUint16(e + 10, true); i < n && v.getUint32(p, true) === 0x02014b50; i++) {
-      const method = v.getUint16(p + 10, true), size = v.getUint32(p + 20, true), nl = v.getUint16(p + 28, true);
+      const method = v.getUint16(p + 10, true), size = v.getUint32(p + 20, true), expanded = v.getUint32(p + 24, true), nl = v.getUint16(p + 28, true);
       const off = v.getUint32(p + 42, true), name = dec.decode(b.subarray(p + 46, p + 46 + nl));
       p += 46 + nl + v.getUint16(p + 30, true) + v.getUint16(p + 32, true);
       if (!want(name)) continue;
       const start = off + 30 + v.getUint16(off + 26, true) + v.getUint16(off + 28, true), data = b.subarray(start, start + size);
-      if (method === 0) out[name] = data; else if (method === 8) out[name] = await inflate(data);
+      if (expanded > remaining || (method === 0 && size > remaining)) throw new Error("Таблица слишком большая");
+      if (data.length !== size || (method !== 0 && method !== 8)) throw new Error("Повреждённая таблица");
+      const entry = method === 0 ? data : await inflate(data, remaining);
+      if (entry.length !== expanded) throw new Error("Повреждённая таблица");
+      remaining -= entry.length;
+      out[name] = entry;
     }
     return out;
   }
   async function readRows(file) {
+    if (file.size > MAX_IMPORT_BYTES) throw new Error("Таблица слишком большая");
     const z = await unzip(await file.arrayBuffer(), n => /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(n));
-    const dec = new TextDecoder(), xml = n => z[n] ? new DOMParser().parseFromString(dec.decode(z[n]), "application/xml") : null;
+    const dec = new TextDecoder(), xml = n => {
+      if (!z[n]) return null;
+      const doc = new DOMParser().parseFromString(dec.decode(z[n]), "application/xml");
+      if (doc.getElementsByTagName("parsererror").length) throw new Error("Повреждённая таблица");
+      return doc;
+    };
     const tags = (node, t) => node ? [...node.getElementsByTagNameNS("*", t)] : [];
     // первый лист по порядку в книге
     let path = Object.keys(z).filter(n => n.startsWith("xl/worksheets/")).sort()[0];
@@ -158,14 +189,18 @@ ${xf(0, 1, 5, 1, C)}
     }
     if (!path) throw new Error("no sheet");
     const shared = tags(xml("xl/sharedStrings.xml"), "si").map(si => tags(si, "t").map(t => t.textContent).join(""));
-    return tags(xml(path), "row").map(r => {
+    const rows = tags(xml(path), "row");
+    if (rows.length > 5000) throw new Error("В таблице больше 5000 строк");
+    return rows.map(r => {
       const line = [];
       tags(r, "c").forEach(c => {
         const letters = ((c.getAttribute("r") || "").match(/^[A-Z]+/) || [""])[0];
         let ci = 0; for (const ch of letters) ci = ci * 26 + ch.charCodeAt(0) - 64;
         const t = c.getAttribute("t"), v = tags(c, "v")[0];
         const val = t === "s" ? shared[+(v && v.textContent)] : t === "inlineStr" ? tags(c, "t").map(x => x.textContent).join("") : v ? v.textContent : "";
-        line[(ci || line.length + 1) - 1] = String(val ?? "").trim();
+        const column = ci || line.length + 1;
+        if (column > 256) throw new Error("В таблице больше 256 столбцов");
+        line[column - 1] = String(val ?? "").trim();
       });
       return Array.from(line, x => x || "");
     });
