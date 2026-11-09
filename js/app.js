@@ -942,10 +942,10 @@
         <section class="card">
           <p style="font-size:14px">${usedBy}</p>
           <div class="counts">${cnt.map((c, i) => `<span class="pill num" style="background:color-mix(in srgb, ${sgColor(i + 1)} 15%, var(--card));color:color-mix(in srgb, ${sgColor(i + 1)} 60%, var(--text))">${i + 1}-я: ${c}</span>`).join("")}<span class="pill ${none ? "pill--warn" : ""} num" style="${none ? "" : "background:var(--field);color:var(--muted-ink)"}">без подгруппы: ${none}</span></div>
-          <div class="btn-row"><button class="btn btn--primary" data-act="form" data-f="sgLists">${ic("add_many")}Задать списками</button><button class="btn btn--soft" data-act="sgEven">${ic("subgroups")}Поровну по списку</button>
-          <button class="btn btn--neutral" data-act="form" data-f="sgCount">${ic("edit")}Количество подгрупп</button>
-          ${b ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Использовать основное деление</button>`
-              : `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Добавить деление для предмета</button>`}</div>
+          <div class="sg-actions"><button class="btn btn--primary" data-act="form" data-f="sgLists">${ic("add_many")}Задать списками</button><button class="btn btn--soft" data-act="sgEven">${ic("subgroups")}Распределить поровну</button>
+          <button class="btn btn--neutral" data-act="form" data-f="sgCount">${ic("edit")}Число подгрупп</button>
+          ${b ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Вернуть общее деление</button>`
+              : `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Деление для предмета</button>`}</div>
         </section>
         ${list.length ? `<p class="hint only-narrow">Нажмите на номер, чтобы сменить подгруппу: 1 → … → ${N} → —</p>
         <p class="hint only-wide" style="text-align:left">Перетащите студента в нужную колонку или нажмите на номер.</p>

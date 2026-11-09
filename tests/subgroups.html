@@ -16,6 +16,15 @@ async function run() {
   d.settings.nntu_checked = new Date().toISOString().slice(0, 10);
   frame.src = "/index.html"; await new Promise(r => frame.onload = r);
   win().localStorage.setItem("starosta.data", JSON.stringify(d)); await load();
+  for (const width of [320, 390]) {
+    frame.style.width = width + "px";
+    await wait(100);
+    const actions = one(".sg-actions"), buttons = [...actions.querySelectorAll(".btn")], bounds = actions.getBoundingClientRect();
+    const inside = buttons.every(b => { const r = b.getBoundingClientRect(); return r.left >= bounds.left - 1 && r.right <= bounds.right + 1 && b.scrollWidth <= b.clientWidth + 1; });
+    const apart = buttons.every((b, i) => buttons.slice(i + 1).every(other => { const a = b.getBoundingClientRect(), c = other.getBoundingClientRect(); return a.right <= c.left + 1 || c.right <= a.left + 1 || a.bottom <= c.top + 1 || c.bottom <= a.top + 1; }));
+    check(inside && apart, `${width}px: кнопки подгрупп не выходят за карточку и не накладываются`);
+  }
+  frame.style.width = "390px";
   let x = data();
   check(!!one('[data-act="sgTab"][data-t="История России"]'), "старое деление отображается после переноса");
   let f = await form("sgCount"); f.count.value = "4"; await save(f);
