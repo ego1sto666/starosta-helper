@@ -34,10 +34,10 @@
   --here: #1FBF8F;          /* был */
   --absent: #FF6F61;        /* не был */
   --excused: #9B8AFB;       /* уважительная причина */
-  --ok: #1DB386;   --ok-soft: #DDF5EC;   --ok-ink: #0E7C61;
-  --bad: #F0564A;  --bad-soft: #FDE6E3;  --bad-ink: #C93C30;
+  --ok: #1DB386;   --ok-soft: #DDF5EC;   --ok-ink: #0B755A;
+  --bad: #F0564A;  --bad-soft: #FDE6E3;  --bad-ink: #B83026;
   --warn: #F2A11F; --warn-soft: #FEF1D8; --warn-ink: #9A5C00;
-  --excused-ink: #6E5AE6;
+  --excused-ink: #604CD0;
   --excused-soft: #EEEAFE;  /* подложка строки «У» (единый сиреневый цвет уважительной причины) */
 
   /* --- только веб: полупрозрачные подложки под blur */
@@ -128,7 +128,7 @@
   --excused-ink: #92400E; --excused-soft: #FEF3C7;
   --fs-title: 27px;         /* в этой теме заголовок крупный, Black, слева */
   --rail-bg: #FFFFFF;
-  --theme-color: #5B4CF0;
+  --theme-color: #F4F5FB;
 }
 
 /* --- тёмная мятная тема (новая, в Kivy-версии её нет) */

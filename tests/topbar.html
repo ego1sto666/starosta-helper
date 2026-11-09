@@ -40,6 +40,23 @@ async function run() {
     themeButton?.click();
     await wait(100);
     check(d.documentElement.dataset.theme === "dark", `${width}px: тема переключается в настройках`);
+    const systemButton = d.querySelector('.theme-card[data-t="system"]');
+    systemButton?.click();
+    const dark = w.matchMedia("(prefers-color-scheme: dark)").matches;
+    check(systemButton?.getAttribute("aria-pressed") === "true" && !d.documentElement.dataset.theme
+      && d.documentElement.dataset.mode === (dark ? "dark" : "light"),
+      `${width}px: системная тема выбирается по настройкам устройства`);
+    if (width === 390) {
+      w.location.hash = "#setup";
+      for (let i = 0; i < 30 && !d.querySelector('input[name="group"]'); i++) await wait(100);
+      const group = d.querySelector('input[name="group"]');
+      group.value = "Черновик группы";
+      group.focus();
+      localStorage.setItem("starosta.theme", JSON.stringify("violet"));
+      for (let i = 0; i < 30 && d.documentElement.dataset.theme !== "violet"; i++) await wait(100);
+      check(d.documentElement.dataset.theme === "violet" && d.activeElement === group && group.value === "Черновик группы",
+        "смена темы в другой вкладке сохраняет текст и фокус в открытой форме");
+    }
     w.location.hash = "#journal";
     for (let i = 0; i < 30 && bar.classList.contains("topbar--home"); i++) await wait(100);
     await wait(500);

@@ -969,7 +969,7 @@
           <button role="tab" aria-selected="${!isT}" data-go="#group/students">Студенты · ${list.length}</button>
           <button role="tab" aria-selected="${isT}" data-go="#group/teachers">Преподаватели · ${DB.teachers.length}</button></div>
         <div class="group-tools">
-          <label class="search">${ic("search")}<span class="sr">Поиск</span><input type="search" id="search" placeholder="${isT ? "Поиск по ФИО или предмету" : "Поиск по ФИО или телефону"}" autocomplete="off"></label>
+          <label class="search">${ic("search")}<span class="sr">${isT ? "Поиск по ФИО или предмету" : "Поиск по ФИО или телефону"}</span><input type="search" id="search" placeholder="${isT ? "ФИО или предмет" : "ФИО или телефон"}" autocomplete="off"></label>
           <a class="btn btn--soft" href="#subgroups">${ic("subgroups")}Подгруппы</a>
         </div>
         ${body}
@@ -995,7 +995,7 @@
     ].filter(Boolean).join("");
     return `<article class="card stack" data-search="${esc(nameKey(t.name + " " + subs.join(" ")))}">
       <div class="person" style="padding:0;min-height:0">${avatar(t.name)}<div class="person__body"><div class="person__name">${esc(t.name)}</div>
-      <div class="person__meta">${subs.map(x => `<span class="chip" style="--c:${accent(x)}">${esc(x)}</span>`).join("")}${t.telegram ? `<span>${esc(tgLabel(t.telegram))}</span>` : ""}${t.email ? `<span>${esc(t.email)}</span>` : ""}</div></div></div>
+      <div class="person__meta">${subs.map(x => `<span class="chip chip--subject" style="--c:${accent(x)}">${esc(x)}</span>`).join("")}${t.telegram ? `<span>${esc(tgLabel(t.telegram))}</span>` : ""}${t.email ? `<span>${esc(t.email)}</span>` : ""}</div></div></div>
       ${t.email || t.telegram || t.phone ? "" : `<p class="muted" style="font-size:13px">Контактов пока нет — добавьте почту или Telegram.</p>`}
       <div class="btn-row">${btns}</div></article>`;
   }
@@ -1515,10 +1515,10 @@
     { id: "mint", n: "Светлая", bg: "#F1F4F2", fg: "#14211C", dots: ["#1FBF8F", "#FF6F61", "#9B8AFB"] },
     { id: "violet", n: "Фиолетовая", bg: "#F4F5FB", fg: "#1F2240", dots: ["#5B4CF0", "#DC2626", "#D97706"] },
     { id: "dark", n: "Тёмная", bg: "#0A0F0D", fg: "#EDF3F0", dots: ["#2DD4A7", "#FF7A6E", "#ADA0FF"] },
+    { id: "system", n: "Как в системе", bg: "var(--field)", fg: "var(--text)", dots: ["#D3DCD8", "#7D8A85", "#141B18"] },
   ];
   SCREENS.settings = () => {
-    // пока тему не выбрали вручную, она следует за системой — выделяем ту, что сейчас на экране
-    const st = store.get("theme", "system"), cur = st === "system" ? (isDark() ? "dark" : "mint") : st, tm = term(), b = bells();
+    const cur = document.documentElement.dataset.theme || "system", tm = term(), b = bells();
     const row = (title, sub, act = "") => `<div class="setting"><div class="setting__body"><b>${title}</b><span>${sub}</span></div>${act}</div>`;
     const editBtn = f => `<button class="btn btn--soft btn--sm" data-act="form" data-f="${f}">${ic("edit")}Изменить</button>`;
     const lastBackup = store.get("lastBackup", 0), ng = DB.settings.nntu_group, synced = parseISO(DB.settings.nntu_synced);
@@ -3445,10 +3445,7 @@
       section.scrollIntoView({ block: "start" });
     },
     theme: el => {
-      const theme = el.dataset.t;
-      setTheme(theme);
-      render(true);
-      $(`.theme-card[data-t="${CSS.escape(theme)}"]`)?.focus({ preventScroll: true });
+      setTheme(el.dataset.t);
     },
     install: () => { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; } else toast("Откройте меню браузера → «Установить приложение» или «Добавить на главный экран»", "info"); },
     exportJson: () => {
@@ -3632,9 +3629,17 @@
     document.documentElement.dataset.mode = isDark() ? "dark" : "light";
     const c = getComputedStyle(document.documentElement).getPropertyValue("--theme-color").trim();
     $('meta[name="theme-color"]').content = c || "#22C79B";
+    const theme = document.documentElement.dataset.theme || "system";
+    $$(".theme-card[data-t]").forEach(card => card.setAttribute("aria-pressed", String(card.dataset.t === theme)));
   }
-  function setTheme(t) { if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; store.set("theme", t); applyMode(); }
-  mq.addEventListener("change", () => { applyMode(); if (DB) render(true); });
+  function setTheme(theme, save = true) {
+    if (!THEMES.some(option => option.id === theme)) theme = "system";
+    if (theme === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+    if (save) store.set("theme", theme);
+    applyMode();
+  }
+  mq.addEventListener("change", applyMode);
 
   /* ---------- установка, часы, другие вкладки ---------- */
   let deferredInstall = null;
@@ -3652,6 +3657,7 @@
   if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.go) location.hash = e.data.go; });
   // приложение открыто в двух вкладках — изменения из другой подтягиваются сами
   addEventListener("storage", e => {
+    if (e.key === "starosta.theme") { setTheme(store.get("theme", "system"), false); return; }
     if (e.key !== activeDataKey || saveFailed) return;
     loadData(); MK = null;
     if (sheet.hidden) render(true);
