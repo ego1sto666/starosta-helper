@@ -8,7 +8,11 @@ const data = () => JSON.parse(win().localStorage.getItem("starosta.data"));
 function check(ok, label) { if (!ok) errors.push(label); out.push(`${ok ? "OK" : "FAIL"}: ${label}`); }
 async function until(fn) { for (let i = 0; i < 80; i++) { const x = fn(); if (x) return x; await wait(100); } throw Error("timeout"); }
 async function load() { frame.src = "/index.html?r=" + Math.random() + "#subgroups"; await new Promise(r => frame.onload = r); await until(() => one('[data-f="sgLists"]')); }
-async function form(name) { one(`[data-f="${name}"]`).click(); return until(() => one(`form[data-form="${name}"]`)); }
+async function form(name) {
+  if (!one(".sg-config").open) one(".sg-config summary").click();
+  one(`[data-f="${name}"]`).click();
+  return until(() => one(`form[data-form="${name}"]`));
+}
 async function save(f) { f.requestSubmit(); await wait(200); }
 async function run() {
   localStorage.clear();
@@ -16,13 +20,16 @@ async function run() {
   d.settings.nntu_checked = new Date().toISOString().slice(0, 10);
   frame.src = "/index.html"; await new Promise(r => frame.onload = r);
   win().localStorage.setItem("starosta.data", JSON.stringify(d)); await load();
+  const settings = one(".sg-config");
+  check(!settings.open && !!(settings.compareDocumentPosition(one(".sg-list")) & Node.DOCUMENT_POSITION_FOLLOWING), "настройки доступны над списком и сначала свёрнуты");
+  settings.querySelector("summary").click();
   for (const width of [320, 390]) {
     frame.style.width = width + "px";
     await wait(100);
     const actions = one(".sg-actions"), buttons = [...actions.querySelectorAll(".btn")], bounds = actions.getBoundingClientRect();
     const inside = buttons.every(b => { const r = b.getBoundingClientRect(); return r.left >= bounds.left - 1 && r.right <= bounds.right + 1 && b.scrollWidth <= b.clientWidth + 1; });
     const apart = buttons.every((b, i) => buttons.slice(i + 1).every(other => { const a = b.getBoundingClientRect(), c = other.getBoundingClientRect(); return a.right <= c.left + 1 || c.right <= a.left + 1 || a.bottom <= c.top + 1 || c.bottom <= a.top + 1; }));
-    check(inside && apart, `${width}px: кнопки подгрупп не выходят за карточку и не накладываются`);
+    check(bounds.width > 0 && inside && apart, `${width}px: кнопки подгрупп не выходят за карточку и не накладываются`);
   }
   frame.style.width = "390px";
   let x = data();
@@ -32,11 +39,12 @@ async function run() {
   check(firstPanel.getAttribute("aria-expanded") === "true" && !one("#sg-panel-1").hidden, "состав подгруппы раскрывается");
   one('.sg-list [data-act="sgPanel"][data-n="2"]').click();
   check(firstPanel.getAttribute("aria-expanded") === "false" && one("#sg-panel-1").hidden && !one("#sg-panel-2").hidden, "открыта только одна подгруппа");
-  check(!!one('[data-act="sgTab"][data-t="История России"]'), "старое деление отображается после переноса");
+  check(!!one('[data-sg-subject] option[value="История России"]'), "старое деление доступно в списке предметов");
   let f = await form("sgCount"); f.count.value = "4"; await save(f);
   check(data().settings.subgroup_count === 4 && data().settings.own_split.includes("История России"), "основное деление изменено на 4, старое сохранено");
   win().location.hash = "#group"; await until(() => doc().getElementById("fab").dataset.kind === "student");
   doc().getElementById("fab").click(); f = await until(() => one('form[data-form="student"]'));
+  check(doc().getElementById("fab").textContent.includes("Добавить студента") && f.elements.name.labels[0].textContent.includes("Фамилия и имя"), "действие и поле формы имеют понятные подписи");
   check(f.subgroup.options.length === 5, "карточка студента показывает 4 подгруппы");
   one('#sheet [data-act="closeSheet"]').click(); win().location.hash = "#subgroups"; await until(() => one('[data-f="sgLists"]'));
   f = await form("ownSplit"); f.base.value = "Экономика"; f.count.value = "3"; await save(f);
@@ -44,8 +52,9 @@ async function run() {
   check(one('[data-act="sgCycle"]') !== null, "студентов можно распределять по новому предмету");
   f = await form("sgCount"); f.count.value = "2"; await save(f);
   check(data().settings.subgroup_subject_counts["Экономика"] === 2, "число подгрупп предмета изменено на 2");
-  one('[data-act="sgTab"][data-t=""]').click(); await wait(200);
-  await until(() => win().location.hash === "#subgroups" && one('[data-act="sgTab"][data-t=""]')?.getAttribute("aria-selected") === "true");
+  const subject = one("[data-sg-subject]");
+  subject.value = ""; subject.dispatchEvent(new win().Event("change", { bubbles: true }));
+  await until(() => win().location.hash === "#subgroups" && one('[data-sg-subject]')?.value === "");
   one('.sg-list [data-act="sgPanel"][data-n="0"]').click();
   const sid = one('#sg-panel-0 [data-act="sgCycle"]').dataset.id;
   one(`#sg-panel-0 [data-act="sgCycle"][data-id="${sid}"]`).click();

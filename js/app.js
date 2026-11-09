@@ -61,7 +61,7 @@
   // p — студент (с фото в p.ava) или просто имя
   function avatar(p, cls = "") {
     const name = typeof p === "string" ? p : (p && p.name) || "";
-    if (p && p.ava) return `<span class="avatar avatar--img ${cls}" aria-hidden="true"><img src="${esc(p.ava)}" alt="" decoding="async"></span>`;
+    if (p && p.ava) return `<span class="avatar avatar--img ${cls}" aria-hidden="true"><img src="${esc(p.ava)}" alt="" loading="lazy" decoding="async"></span>`;
     const i = accentIndex(name), hex = ACCENT_HEX[i];
     const [r, g, b] = [1, 3, 5].map(k => parseInt(hex.slice(k, k + 2), 16) / 255);
     const fg = 0.299 * r + 0.587 * g + 0.114 * b > 0.66 ? "#1A1A1A" : "#fff";
@@ -729,6 +729,7 @@
     const lessonCount = activeOnly(today).length;
     const live = today.find(l => lessonState(l, TODAY) === "live");
     const next = today.find(l => lessonState(l, TODAY) === "future" && lessonSpan(l)[0]);
+    const unmarked = activeOnly(today).find(l => lessonState(l, TODAY) === "past" && !DB.attendance[attKey(TODAY, l.id)]);
     const open = DB.tasks.filter(t => !t.done);
     const late = open.filter(t => { const d = parseISO(t.due); return d && d < TODAY; }).length;
     const soon = DB.events.filter(e => { const d = eventDate(e); return d && d >= TODAY && d < addDays(TODAY, 14); }).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
@@ -789,7 +790,8 @@
       home: true, nav: "home", fab: "quick",
       html: `
         <div class="home-top"><section class="hero"><h1>Сегодня</h1>
-          <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p></section>${nowCard}</div>
+          <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p>
+          ${!live && unmarked ? `<a class="btn btn--primary home-attendance" href="#mark/${encodeURIComponent(unmarked.id)}/${key(TODAY)}">${ic("journal")}Отметить прошедшую пару</a>` : ""}</section>${nowCard}</div>
         <div class="split home-workspace">
           <div class="stack">
             ${sectionHead("schedule", "Пары сегодня", `<a class="link" href="#journal">Журнал</a>`, lessonCount || undefined)}
@@ -872,7 +874,7 @@
     return {
       title: baseSubject(l.subject), sub: `${fmtShort(d)} · ${l.num || "?"} пара${b ? ` · ${b}–${e}` : ""}${sg ? ` · п/г ${sg}` : ""}`,
       back: "#journal", nav: "journal", focus: true, actions: [["broom", "Удалить отметки занятия", "resetMarks"]],
-      actionbar: `<button class="btn btn--ok" data-act="allHere">${ic("tick")}Все были</button><button class="btn btn--primary" data-act="copyAbsent">${ic("copy")}Копировать</button>`,
+      actionbar: `<button class="btn btn--ok" data-act="allHere">${ic("tick")}Все были</button><button class="btn btn--primary" data-act="copyAbsent">${ic("copy")}Список пропусков</button>`,
       html: `
         <div class="card markbar" id="markbar">${markbarHtml()}</div>
         <div class="split">
@@ -984,6 +986,11 @@
   }
 
   /* ----- Подгруппы ----- */
+  function goSubgroup(base) {
+    const hash = `#subgroups${base ? "/" + encodeURIComponent(base) : ""}`;
+    if (location.hash === hash) render(true);
+    else location.hash = hash;
+  }
   SCREENS.subgroups = (base) => {
     const own = ownSplit();
     S.sgTab = base || "";
@@ -1006,7 +1013,7 @@
       return `<section class="sg-section" style="--c:${n ? sgColor(n) : "var(--muted)"}">
         <button type="button" class="sg-section__toggle" data-act="sgPanel" data-n="${n}" aria-expanded="${opened}" aria-controls="sg-panel-${n}">
           <span class="sg-section__mark" aria-hidden="true"></span><span class="sg-section__title">${n ? `${n}-я подгруппа` : "Без подгруппы"}</span>
-          <span class="sg-section__count">${ls.length}</span><span class="sg-section__chevron" aria-hidden="true"></span>
+          <span class="sg-section__count">${ls.length}<span class="sr"> ${plural(ls.length, ["студент", "студента", "студентов"])}</span></span><span class="sg-section__chevron" aria-hidden="true"></span>
         </button>
         <div class="sg-section__body" id="sg-panel-${n}"${opened ? "" : " hidden"}>${ls.map(row).join("") || `<p class="hint">${n ? "В этой подгруппе пока нет студентов" : "Все распределены"}</p>`}</div>
       </section>`;
@@ -1016,19 +1023,29 @@
     return {
       title: "Подгруппы", sub: b || "Основное деление", back: "#group", nav: "group",
       html: `
-        ${own.length ? `<div class="seg" role="tablist" aria-label="Деление"><button role="tab" aria-selected="${!b}" data-act="sgTab" data-t="">Основные</button>${own.map(x => `<button role="tab" aria-selected="${b === x}" data-act="sgTab" data-t="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : ""}
-        ${list.length ? `<div class="sg-list">${mobileGroups}</div>` : ""}
-        <section class="card">
+        ${own.length ? `
+          <div class="sg-subject-picker only-narrow">${field("Деление по предмету", `<select data-sg-subject>
+            <option value="">Основное деление</option>${own.map(x => `<option value="${esc(x)}"${b === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>`)}</div>
+          <div class="only-wide"><div class="seg" role="tablist" aria-label="Деление"><button role="tab" aria-selected="${!b}" data-act="sgTab" data-t="">Основные</button>${own.map(x => `<button role="tab" aria-selected="${b === x}" data-act="sgTab" data-t="${esc(x)}">${esc(x)}</button>`).join("")}</div></div>` : ""}
+        <details class="sg-config"${(S.sgConfig ?? matchMedia("(min-width: 900px)").matches) ? " open" : ""}>
+          <summary>Настроить деление</summary>
+          <div class="sg-config__body">
           <p style="font-size:14px">${usedBy}</p>
           <div class="counts">${cnt.map((c, i) => `<span class="pill num" style="background:color-mix(in srgb, ${sgColor(i + 1)} 15%, var(--card));color:color-mix(in srgb, ${sgColor(i + 1)} 60%, var(--text))">${i + 1}-я: ${c}</span>`).join("")}<span class="pill ${none ? "pill--warn" : ""} num" style="${none ? "" : "background:var(--field);color:var(--muted-ink)"}">без подгруппы: ${none}</span></div>
           <div class="sg-actions"><button class="btn btn--primary" data-act="form" data-f="sgLists">${ic("add_many")}Задать списками</button><button class="btn btn--soft" data-act="sgEven">${ic("subgroups")}Распределить поровну</button>
           <button class="btn btn--neutral" data-act="form" data-f="sgCount">${ic("edit")}Число подгрупп</button>
           ${b ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Вернуть общее деление</button>`
               : `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Деление для предмета</button>`}</div>
-        </section>
+          </div>
+        </details>
+        ${list.length ? `<div class="sg-list">${mobileGroups}</div>` : ""}
         ${list.length ? `<p class="hint only-wide" style="text-align:left">Перетащите студента в нужную колонку или нажмите на номер.</p>
         <div class="boards" style="--n:${N}">${boards}</div>` : empty("group", "", "В группе нет студентов. Добавьте их во вкладке «Группа».")}`,
-      after: bindDnD,
+      after: () => {
+        const settings = $(".sg-config");
+        settings.addEventListener("toggle", () => { if (settings.isConnected) S.sgConfig = settings.open; });
+        bindDnD();
+      },
     };
   };
   function bindDnD() {
@@ -1453,7 +1470,7 @@
             ${e.text ? `<p class="muted" style="font-size:13px;margin-top:6px;white-space:pre-line">${esc(e.text)}</p>` : ""}
             <div class="going">${faces ? `<span class="faces">${faces}</span>` : ""}${bar(N ? g.size / N * 100 : 0, "var(--primary)", true)}<b>${g.size} из ${N}</b></div>
             <div class="btn-row" style="margin-top:10px"><button class="btn btn--soft btn--sm" data-act="going" data-id="${esc(e.id)}">${ic("going")}Кто идёт</button>
-            <button class="btn btn--neutral btn--sm" data-act="copyText" data-t="${esc(invite)}">${ic("copy")}Пригласить</button></div></div></article>`;
+            <button class="btn btn--neutral btn--sm" data-act="copyText" data-t="${esc(invite)}">${ic("copy")}Скопировать приглашение</button></div></div></article>`;
         }).join("")}</div>` : empty("party", past ? "Прошедших событий нет" : "Событий пока нет", past ? "Здесь будут события, дата которых уже прошла." : "Добавьте собрание, поход или праздник — ближайшие появятся на главной.")}`,
     };
   };
@@ -2098,6 +2115,11 @@
   /* ================= КАРКАС ================= */
   const NAV = window.StarostaRoutes.sections;
   const app = $(".app"), view = $("#view"), topbar = $("#topbar"), nav = $("#nav"), fab = $("#fab"), actionbar = $("#actionbar");
+  const fabLabels = {
+    quick: "Быстро добавить", schedAdd: "Добавить пару", student: "Добавить студента", teacher: "Добавить преподавателя",
+    task: "Добавить дело", work: "Добавить сдачу", fund: "Добавить сбор", exam: "Добавить экзамен или зачёт",
+    event: "Добавить событие", doc: "Добавить документ", poll: "Создать опрос", tpl: "Добавить шаблон",
+  };
   let lastRoute = "", current = null;
 
   // «Учёба» и «Внеучебка» открываются на той вкладке, где были в прошлый раз
@@ -2138,7 +2160,10 @@
     if (scr.home) {
       topbar.className = "topbar topbar--home";
       topbar.innerHTML = `<div class="topbar__context"><span>Группа</span><b class="ellipsis">${esc(DB.settings.group || "Новая группа")}</b></div>
-        <div class="topbar__actions"><a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a></div>`;
+        <div class="topbar__actions">
+          <button type="button" class="btn btn--soft btn--sm home-quick" data-act="form" data-f="quick">${ic("plus")}Добавить</button>
+          <a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a>
+        </div>`;
     } else {
       topbar.className = (scr.actions || []).length > 2 ? "topbar topbar--tools" : "topbar";
       topbar.innerHTML = `${scr.back ? `<a class="icon-btn back" href="${scr.back}" aria-label="Назад" title="Назад (Esc)">${ic("back")}</a>` : "<span></span>"}
@@ -2207,7 +2232,11 @@
     showSaveWarning();
     app.classList.toggle("is-focus", !!current.focus);
     app.classList.toggle("is-welcome", !!current.welcome);
+    app.classList.toggle("is-home", !!current.home);
     fab.hidden = !current.fab; fab.dataset.kind = current.fab || "";
+    const actionLabel = fabLabels[current.fab] || "Добавить";
+    $(".fab__label", fab).textContent = actionLabel;
+    fab.setAttribute("aria-label", actionLabel);
     actionbar.hidden = !current.actionbar; actionbar.innerHTML = current.actionbar || "";
     current.after && current.after();
     const route = location.hash;
@@ -2256,7 +2285,7 @@
       <button type="button" class="btn btn--neutral btn--sm" data-act="avaForm">${ic("camera")}${cur ? "Другое фото" : "Добавить фото"}</button>
       ${cur ? `<button type="button" class="btn btn--ghost btn--sm" data-act="avaFormDel">Убрать</button>` : ""}</div><input type="hidden" name="ava" value="${esc(val)}"></div>`; };
   const setAvaField = (f, val) => { const s = DB.students.find(x => x.id === f.dataset.id) || {}; $("#avaField", f).outerHTML = avaField({ ...s, name: f.name.value.trim() || s.name }, val); };
-  const field = (label, input) => `<div class="field"><label>${label}</label>${input}</div>`;
+  const field = (label, input) => `<label class="field"><span class="field__label">${label}</span>${input}</label>`;
   const textarea = (name, value, rows = 3, ph = "") => `<textarea name="${name}" rows="${rows}" placeholder="${esc(ph)}" style="border-radius:14px;border:0;background:var(--field);padding:12px 14px;font-size:15px;resize:vertical">${esc(value)}</textarea>`;
   const formErr = `<p class="form-err" style="color:var(--bad-ink);font-size:13px;margin:-4px 0 10px" role="alert" hidden></p>`;
   const formBtns = (delAct, delId) => `${formErr}<div class="btn-row" style="margin-top:6px">${delAct ? `<button type="button" class="btn btn--danger" style="flex:0 0 48px;padding:0" data-act="${delAct}" data-id="${esc(delId)}" aria-label="Удалить">${ic("delete")}</button>` : ""}<button type="button" class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--primary">Сохранить</button></div>`;
@@ -3093,7 +3122,7 @@
       copy(text, "Список скопирован");
     },
     copyText: el => copy(el.dataset.t, "Скопировано"),
-    sgTab: el => { const hash = `#subgroups${el.dataset.t ? "/" + encodeURIComponent(el.dataset.t) : ""}`; if (location.hash === hash) render(true); else location.hash = hash; },
+    sgTab: el => goSubgroup(el.dataset.t),
     sgUnown: el => { DB.settings.own_split = (DB.settings.own_split || []).filter(x => x !== el.dataset.t); S.sgTab = ""; persist(); if (location.hash === "#subgroups") render(true); else location.hash = "#subgroups"; },
     sgPanel: el => {
       const n = +el.dataset.n, opened = el.getAttribute("aria-expanded") === "true";
@@ -3519,6 +3548,7 @@
   document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="contacts"]'); if (f) contactsPreview(f); });
   document.addEventListener("input", e => { const f = e.target.closest && e.target.closest('form[data-form="scheduleImport"]'); if (f) schedulePreview(f); });
   document.addEventListener("change", e => { const f = e.target.closest && e.target.closest('form[data-form="contacts"]'); if (f) contactsPreview(f); });
+  document.addEventListener("change", e => { if (e.target.matches("[data-sg-subject]")) goSubgroup(e.target.value); });
   document.addEventListener("change", e => {
     const f = e.target.closest && e.target.closest('form[data-form="sgLists"]'); if (!f) return;
     if (e.target.name === "base") openSheet(FORMS.sgLists(e.target.value)); else listPreview(f);
@@ -3655,10 +3685,9 @@
     <div class="skeleton" style="height:96px;width:70%"></div><div class="skeleton" style="height:150px;border-radius:24px"></div>
     <div class="tiles"><div class="skeleton" style="height:112px;border-radius:20px"></div><div class="skeleton" style="height:112px;border-radius:20px"></div><div class="skeleton" style="height:112px;border-radius:20px"></div></div>
     <div class="skeleton" style="height:120px;border-radius:20px"></div></div>`;
-  const fontsReady = document.fonts ? Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 1500))]) : Promise.resolve();
   loadData();
   if ((DB || storageProblem || store.get("activeCloud", null)) && pinSet()) LOCKED = true;
-  fontsReady.then(async () => {
+  async function start() {
     await restoreAccount();
     // У гостевого просмотра свои данные в браузере. Обновляем только устаревший
     // пример, чтобы обычная ссылка #home не показывала прежний вымышленный список.
@@ -3666,6 +3695,7 @@
       await ACT.demoApply();
     else render();
     if (!LOCKED) { autoCheck(); setTimeout(bdayReminder, 400); }
-  }).catch(error => { actionError(error); render(); });
+  }
+  start().catch(error => { actionError(error); render(); });
   addEventListener("online", () => { autoCheck(); if (SYNC) SYNC.pull().catch(() => {}); });
 })();
