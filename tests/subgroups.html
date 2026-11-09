@@ -26,6 +26,12 @@ async function run() {
   }
   frame.style.width = "390px";
   let x = data();
+  check(one('.sg-list [data-act="sgPanel"][aria-expanded="true"]') === null, "на телефоне составы подгрупп сначала свёрнуты");
+  const firstPanel = one('.sg-list [data-act="sgPanel"][data-n="1"]');
+  firstPanel.click();
+  check(firstPanel.getAttribute("aria-expanded") === "true" && !one("#sg-panel-1").hidden, "состав подгруппы раскрывается");
+  one('.sg-list [data-act="sgPanel"][data-n="2"]').click();
+  check(firstPanel.getAttribute("aria-expanded") === "false" && one("#sg-panel-1").hidden && !one("#sg-panel-2").hidden, "открыта только одна подгруппа");
   check(!!one('[data-act="sgTab"][data-t="История России"]'), "старое деление отображается после переноса");
   let f = await form("sgCount"); f.count.value = "4"; await save(f);
   check(data().settings.subgroup_count === 4 && data().settings.own_split.includes("История России"), "основное деление изменено на 4, старое сохранено");
@@ -40,11 +46,13 @@ async function run() {
   check(data().settings.subgroup_subject_counts["Экономика"] === 2, "число подгрупп предмета изменено на 2");
   one('[data-act="sgTab"][data-t=""]').click(); await wait(200);
   await until(() => win().location.hash === "#subgroups" && one('[data-act="sgTab"][data-t=""]')?.getAttribute("aria-selected") === "true");
-  const sid = one('.sg-list [data-act="sgCycle"]').dataset.id;
-  for (let i = 0; i < 5 && (data().students.find(s => s.id === sid).subgroup || 0) < 4; i++) {
-    one(`.sg-list [data-act="sgCycle"][data-id="${sid}"]`).click(); await wait(100);
-  }
-  check(data().students.find(s => s.id === sid).subgroup === 4, "студента можно перевести в 4-ю подгруппу");
+  one('.sg-list [data-act="sgPanel"][data-n="0"]').click();
+  const sid = one('#sg-panel-0 [data-act="sgCycle"]').dataset.id;
+  one(`#sg-panel-0 [data-act="sgCycle"][data-id="${sid}"]`).click();
+  await until(() => one('.sg-choices [data-act="sgSet"][data-n="4"]'));
+  one('.sg-choices [data-act="sgSet"][data-n="4"]').click();
+  await until(() => data().students.find(s => s.id === sid).subgroup === 4);
+  check(one('.sg-list [data-act="sgPanel"][data-n="4"]').getAttribute("aria-expanded") === "true" && !!one(`#sg-panel-4 [data-act="sgCycle"][data-id="${sid}"]`), "студент переведён сразу в 4-ю подгруппу и виден в ней");
   f = await form("sgCount"); f.count.value = "2"; await save(f);
   check(data().settings.subgroup_count === 4 && !one(".form-err").hidden, "уменьшение не теряет студентов 3–4-й подгруппы");
   out.push("ERRORS: " + (errors.join(" | ") || "нет"));

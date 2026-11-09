@@ -296,7 +296,7 @@
 
   /* ---------- состояние экрана ---------- */
   const S = { journalDate: null, statsPeriod: null, statsSubject: "", studentPeriod: null,
-    groupTab: "students", sgTab: "", taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
+    groupTab: "students", sgTab: "", sgFor: "", sgOpen: null, taskTab: "open", taskKind: "", showPast: false, sgPick: {}, from: "group",
     tasksView: "tasks", studyView: "works", worksDone: false, examsPast: false, pollsClosed: false, gradesFilter: "" };
 
   /* ---------- общие куски разметки ---------- */
@@ -922,7 +922,9 @@
     const own = ownSplit();
     S.sgTab = base || "";
     if (S.sgTab && !own.includes(S.sgTab)) S.sgTab = "";
+    if (S.sgFor !== S.sgTab) { S.sgFor = S.sgTab; S.sgOpen = null; }
     const b = S.sgTab || null, N = splitSize(b), list = students();
+    if (S.sgOpen > N) S.sgOpen = null;
     const num = s => studentSubgroup(s, b, own);
     const cnt = Array.from({ length: N }, (_, i) => list.filter(s => num(s) === i + 1).length), none = list.filter(s => !num(s)).length;
     const chip = s => { const n = num(s); return `<button class="sgchip${n ? "" : " sgchip--none"}" style="--c:${n ? sgColor(n) : "var(--muted)"}" data-act="sgCycle" data-id="${esc(s.id)}" aria-label="${esc(s.name)}: ${n ? n + "-я подгруппа" : "без подгруппы"}. Нажмите, чтобы сменить">${n || "—"}</button>`; };
@@ -933,12 +935,23 @@
         <div class="board__head"><b>${n ? `${n}-я подгруппа` : "Без подгруппы"}</b><span class="pill num" style="background:var(--card)">${ls.length}</span></div>
         ${ls.map(row).join("") || `<p class="hint" style="padding:18px 6px">${n ? "Перетащите сюда студентов" : "Все распределены"}</p>`}</section>`;
     }).join("");
+    const mobileGroups = [...Array.from({ length: N }, (_, i) => i + 1), 0].map(n => {
+      const ls = list.filter(s => num(s) === n), opened = S.sgOpen === n;
+      return `<section class="sg-section" style="--c:${n ? sgColor(n) : "var(--muted)"}">
+        <button type="button" class="sg-section__toggle" data-act="sgPanel" data-n="${n}" aria-expanded="${opened}" aria-controls="sg-panel-${n}">
+          <span class="sg-section__mark" aria-hidden="true"></span><span class="sg-section__title">${n ? `${n}-я подгруппа` : "Без подгруппы"}</span>
+          <span class="sg-section__count">${ls.length}</span><span class="sg-section__chevron" aria-hidden="true"></span>
+        </button>
+        <div class="sg-section__body" id="sg-panel-${n}"${opened ? "" : " hidden"}>${ls.map(row).join("") || `<p class="hint">${n ? "В этой подгруппе пока нет студентов" : "Все распределены"}</p>`}</div>
+      </section>`;
+    }).join("");
     const usedBy = b ? `Своё деление: ${N} ${plural(N, ["подгруппа", "подгруппы", "подгрупп"])}.`
       : own.length ? `Для всех предметов, кроме: <b>${own.map(esc).join(", ")}</b>.` : "Для всех предметов с подгруппами.";
     return {
       title: "Подгруппы", sub: b || "Основное деление", back: "#group", nav: "group",
       html: `
         ${own.length ? `<div class="seg" role="tablist" aria-label="Деление"><button role="tab" aria-selected="${!b}" data-act="sgTab" data-t="">Основные</button>${own.map(x => `<button role="tab" aria-selected="${b === x}" data-act="sgTab" data-t="${esc(x)}">${esc(x)}</button>`).join("")}</div>` : ""}
+        ${list.length ? `<div class="sg-list">${mobileGroups}</div>` : ""}
         <section class="card">
           <p style="font-size:14px">${usedBy}</p>
           <div class="counts">${cnt.map((c, i) => `<span class="pill num" style="background:color-mix(in srgb, ${sgColor(i + 1)} 15%, var(--card));color:color-mix(in srgb, ${sgColor(i + 1)} 60%, var(--text))">${i + 1}-я: ${c}</span>`).join("")}<span class="pill ${none ? "pill--warn" : ""} num" style="${none ? "" : "background:var(--field);color:var(--muted-ink)"}">без подгруппы: ${none}</span></div>
@@ -947,9 +960,7 @@
           ${b ? `<button class="btn btn--neutral" data-act="sgUnown" data-t="${esc(b)}">Вернуть общее деление</button>`
               : `<button class="btn btn--neutral" data-act="form" data-f="ownSplit">Деление для предмета</button>`}</div>
         </section>
-        ${list.length ? `<p class="hint only-narrow">Нажмите на номер, чтобы сменить подгруппу: 1 → … → ${N} → —</p>
-        <p class="hint only-wide" style="text-align:left">Перетащите студента в нужную колонку или нажмите на номер.</p>
-        <div class="stack sg-list">${list.map(row).join("")}</div>
+        ${list.length ? `<p class="hint only-wide" style="text-align:left">Перетащите студента в нужную колонку или нажмите на номер.</p>
         <div class="boards" style="--n:${N}">${boards}</div>` : empty("group", "", "В группе нет студентов. Добавьте их во вкладке «Группа».")}`,
       after: bindDnD,
     };
@@ -2950,12 +2961,35 @@
     copyText: el => copy(el.dataset.t, "Скопировано"),
     sgTab: el => { const hash = `#subgroups${el.dataset.t ? "/" + encodeURIComponent(el.dataset.t) : ""}`; if (location.hash === hash) render(true); else location.hash = hash; },
     sgUnown: el => { DB.settings.own_split = (DB.settings.own_split || []).filter(x => x !== el.dataset.t); S.sgTab = ""; persist(); if (location.hash === "#subgroups") render(true); else location.hash = "#subgroups"; },
+    sgPanel: el => {
+      const n = +el.dataset.n, opened = el.getAttribute("aria-expanded") === "true";
+      S.sgOpen = opened ? null : n;
+      $$(".sg-section__toggle").forEach(button => {
+        const show = !opened && button === el;
+        button.setAttribute("aria-expanded", String(show));
+        $("#" + button.getAttribute("aria-controls")).hidden = !show;
+      });
+    },
     sgCycle: (el, e) => {
       e.stopPropagation();
       const b = S.sgTab || null, N = splitSize(b), s = DB.students.find(x => x.id === el.dataset.id), n = studentSubgroup(s, b);
+      if (matchMedia("(max-width: 899px)").matches) {
+        openSheet(`${sheetHead("subgroups", "var(--primary)", "Перевести студента")}
+          <p class="hint" style="margin-bottom:14px">${esc(s.name)}</p><div class="sg-choices">
+          ${[...Array.from({ length: N }, (_, i) => i + 1), 0].map(i => `<button type="button" class="btn ${i === n ? "btn--soft" : "btn--neutral"}" data-act="sgSet" data-id="${esc(s.id)}" data-n="${i}"${i === n ? ' aria-current="true"' : ""}>${i ? `${i}-я подгруппа` : "Без подгруппы"}</button>`).join("")}</div>`);
+        return true;
+      }
       setStudentSubgroup(s, n < N ? n + 1 : 0, b); persist(); render(true);
       const nu = $$(`[data-act="sgCycle"][data-id="${CSS.escape(s.id)}"]`).find(x => x.offsetParent); nu && (nu.classList.add("pop"), nu.focus({ preventScroll: true }));
       return true;
+    },
+    sgSet: el => {
+      const s = DB.students.find(x => x.id === el.dataset.id);
+      if (!s) return;
+      const n = +el.dataset.n;
+      setStudentSubgroup(s, n, S.sgTab || null); S.sgOpen = n; persist(); closeSheet(); render(true);
+      const panel = $("#sg-panel-" + n); panel && panel.scrollIntoView({ block: "nearest" });
+      toast(n ? `${n}-я подгруппа` : "Без подгруппы");
     },
     sgEven: () => {
       const b = S.sgTab || null, N = splitSize(b), list = students(), per = Math.ceil(list.length / N);
