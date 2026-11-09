@@ -957,6 +957,357 @@
     }
    }
   },
+  "/integrations/mail/{code}": {
+   "post": {
+    "tags": [
+     "Почтовый шлюз"
+    ],
+    "summary": "Receive Mail",
+    "operationId": "receive_mail_integrations_mail__code__post",
+    "parameters": [
+     {
+      "name": "code",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Code"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/groups/{group_id}/telegram/polls": {
+   "get": {
+    "tags": [
+     "Telegram"
+    ],
+    "summary": "Polls",
+    "operationId": "polls_groups__group_id__telegram_polls_get",
+    "parameters": [
+     {
+      "name": "group_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Group Id"
+      }
+     },
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/push/config": {
+   "get": {
+    "tags": [
+     "Уведомления"
+    ],
+    "summary": "Config",
+    "operationId": "config_push_config_get",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/push/device": {
+   "put": {
+    "tags": [
+     "Уведомления"
+    ],
+    "summary": "Save",
+    "operationId": "save_push_device_put",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SubscriptionIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/push/device/status": {
+   "post": {
+    "tags": [
+     "Уведомления"
+    ],
+    "summary": "Status",
+    "operationId": "status_push_device_status_post",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EndpointIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/push/device/remove": {
+   "post": {
+    "tags": [
+     "Уведомления"
+    ],
+    "summary": "Remove",
+    "operationId": "remove_push_device_remove_post",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EndpointIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/push/test": {
+   "post": {
+    "tags": [
+     "Уведомления"
+    ],
+    "summary": "Test Delivery",
+    "operationId": "test_delivery_push_test_post",
+    "parameters": [
+     {
+      "name": "starosta_session",
+      "in": "cookie",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Starosta Session"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EndpointIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
   "/health": {
    "get": {
     "tags": [
@@ -996,6 +1347,8 @@
     "properties": {
      "rev": {
       "type": "integer",
+      "maximum": 9007199254740990.0,
+      "minimum": 0.0,
       "title": "Rev"
      },
      "data": {
@@ -1028,6 +1381,20 @@
     },
     "type": "object",
     "title": "DecideIn"
+   },
+   "EndpointIn": {
+    "properties": {
+     "endpoint": {
+      "type": "string",
+      "maxLength": 2048,
+      "title": "Endpoint"
+     }
+    },
+    "type": "object",
+    "required": [
+     "endpoint"
+    ],
+    "title": "EndpointIn"
    },
    "ForgotIn": {
     "properties": {
@@ -1160,6 +1527,26 @@
     ],
     "title": "LoginIn"
    },
+   "PushKeys": {
+    "properties": {
+     "p256dh": {
+      "type": "string",
+      "maxLength": 90,
+      "title": "P256Dh"
+     },
+     "auth": {
+      "type": "string",
+      "maxLength": 24,
+      "title": "Auth"
+     }
+    },
+    "type": "object",
+    "required": [
+     "p256dh",
+     "auth"
+    ],
+    "title": "PushKeys"
+   },
    "RegisterIn": {
     "properties": {
      "login": {
@@ -1218,6 +1605,24 @@
      "password"
     ],
     "title": "ResetIn"
+   },
+   "SubscriptionIn": {
+    "properties": {
+     "endpoint": {
+      "type": "string",
+      "maxLength": 2048,
+      "title": "Endpoint"
+     },
+     "keys": {
+      "$ref": "#/components/schemas/PushKeys"
+     }
+    },
+    "type": "object",
+    "required": [
+     "endpoint",
+     "keys"
+    ],
+    "title": "SubscriptionIn"
    },
    "UserOut": {
     "properties": {

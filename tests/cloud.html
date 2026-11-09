@@ -10,10 +10,15 @@ async function run(){
   const frame=document.querySelector('#app'); let html=await(await fetch('/index.html')).text();
   html=html.replace('<head>','<head><base href="/">');
   const mock=`window.STAROSTA_PRIVACY_URL='/privacy.html';
+    const sub={endpoint:'https://fcm.googleapis.com/fcm/send/browser-test',toJSON(){return {endpoint:this.endpoint}},unsubscribe:async()=>{device=null;return true}};
+    let device=null;window.pushTests=0;
+    navigator.serviceWorker.getRegistration=async()=>({active:{},pushManager:{getSubscription:async()=>device,subscribe:async()=>device=sub}});
     let groups=[],data={};let inbox=[{id:'i1',suggestion:{kind:'work',title:'Сдать отчёт',subject:'Физика',due:'2026-11-20'},mail:{from:'Преподаватель',subject:'Отчёт',text:'Сдать отчёт до 20.11',sent_at:'2026-11-07'}}];
     window.StarostaAPI={enabled:()=>true,auth:{me:()=>Promise.resolve({id:'u1',login:'chief',email:'chief@example.ru'}),logout:()=>Promise.resolve()},
     groups:{list:()=>Promise.resolve(groups),create:(title,d,university)=>{const g={id:'g1',title,university,mail_address:'test@in.starosta.local'};groups=[g];data=d;return Promise.resolve(g)},pull:()=>Promise.resolve({rev:1,data}),push:(id,rev,d)=>{data=d;return Promise.resolve({rev:rev+1})}},
-    mail:{sources:()=>Promise.resolve([{id:'f1',kind:'forward',address:'test@in.starosta.local'}]),inbox:()=>Promise.resolve(inbox),accept:(g,i)=>{inbox=inbox.filter(x=>x.id!==i);return Promise.resolve()},dismiss:()=>Promise.resolve(),addImap:()=>Promise.resolve(),remove:()=>Promise.resolve()},
+    mail:{sources:()=>Promise.resolve([{id:'f1',kind:'forward',configured:true,address:'test@in.starosta.local'}]),inbox:()=>Promise.resolve(inbox),accept:(g,i)=>{inbox=inbox.filter(x=>x.id!==i);return Promise.resolve()},dismiss:()=>Promise.resolve(),addImap:()=>Promise.resolve(),remove:()=>Promise.resolve()},
+    telegram:{polls:async()=>({configured:true,items:[{question:'<b>Опрос из чата</b>',options:[{text:'В пятницу',votes:3}],total:3,closed:true,updated_at:'2026-11-10T11:00:00Z'}]})},
+    push:{config:async()=>({public_key:'AQ'}),status:async()=>({active:!!device}),save:async()=>{},remove:async()=>{},test:async()=>{window.pushTests++}},
     createSync:({groupId,getData,setData,onState})=>({pull:async()=>setData(data),push:async()=>{data=getData();onState('ok')},changed:()=>{data=getData()},stop:()=>{}})};`;
   const close='</scr'+'ipt>';
   html=html.replace('<script src="js/app.js">'+close,'<scr'+'ipt>'+mock+close+'<script src="js/app.js">'+close);
@@ -30,9 +35,24 @@ async function run(){
   frame.contentWindow.location.hash='#mail';
   const item=await until(()=>d.querySelector('[data-act="mailCreate"]'),'входящее письмо');
   check(d.querySelector('#view')?.textContent.includes('Сдать отчёт'),'письмо показано');
+  check(d.querySelector('.mail-connect__address')?.textContent.includes('test@in.starosta.local'),'подключённый адрес группы виден');
   item.click();await until(()=>!d.querySelector('[data-act="mailCreate"]'),'письмо принято');
   check(JSON.parse(localStorage.getItem('starosta.cloud.u1.g1')).works.some(w=>w.source_mail==='i1'),'сдача создана в своей группе');
   check(!localStorage.getItem('starosta.data'),'локальная группа не перезаписана');
+  frame.contentWindow.location.hash='#tasks/polls';
+  const telegram=await until(()=>d.querySelector('#telegram-polls'),'раздел Telegram');
+  telegram.open=true;
+  const question=await until(()=>telegram.querySelector('h3'),'опрос Telegram');
+  check(question.textContent==='<b>Опрос из чата</b>' && !question.querySelector('b') && telegram.textContent.includes('В пятницу — 3'),'опрос и голоса показаны, HTML сообщения экранирован');
+  frame.contentWindow.location.hash='#settings';
+  (await until(()=>d.querySelector('[data-act=pushSettings]'),'настройки пушей')).click();
+  (await until(()=>d.querySelector('#push-device [data-mode=on]'),'включение пушей')).click();
+  (await until(()=>d.querySelector('#push-device [data-mode=test]'),'проверка пушей')).click();
+  await until(()=>d.querySelector('#push-device')?.textContent.includes('Проверка отправлена'),'подтверждение проверки');
+  check(frame.contentWindow.pushTests===1,'проверка отправлена для устройства один раз');
+  d.querySelector('#push-device [data-mode=off]').click();
+  await until(()=>d.querySelector('#push-device [data-mode=on]'),'отключение пушей');
+  d.querySelector('#sheet [data-act=closeSheet]').click();
   frame.contentWindow.location.hash='#account';
   await until(()=>d.querySelector('.account__groups'),'список групп');
   check(d.querySelector('.account__groups')?.textContent.includes('Другой университет'),'вуз показан в аккаунте');

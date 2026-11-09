@@ -1621,6 +1621,7 @@
                 pinSet() ? `<div class="btn-row" style="flex-wrap:nowrap"><button class="btn btn--soft btn--sm" data-act="form" data-f="pin">Сменить</button><button class="btn btn--neutral btn--sm" data-act="pinOff">Выключить</button></div>`
                   : `<button class="btn btn--soft btn--sm" data-act="form" data-f="pin">${ic("lock")}Включить</button>`)}
               ${row("Установить", "Иконка на рабочем столе или главном экране, работает без интернета. Долгое нажатие на иконку — быстрые действия", `<button class="btn btn--primary btn--sm" data-act="install">Установить</button>`)}
+              ${ACCOUNT && accountReady() ? row("Пуш-уведомления", "Проверьте доставку на это устройство при закрытой вкладке.", `<button class="btn btn--soft btn--sm" data-act="pushSettings">${ic("bell")}Настроить</button>`) : ""}
               ${row("Как пользоваться", "Короткая инструкция: с чего начать и что умеет приложение", `<a class="btn btn--neutral btn--sm" href="#help">${ic("help")}Открыть</a>`)}
               ${FEEDBACK_URL ? row("Оценить приложение", "Короткая анкета: что нравится, что неудобно, чего не хватает", feedbackBtn("btn btn--soft btn--sm")) : ""}
               ${isDemo() ? row("Пример", "Сейчас открыт пример со случайными отметками", `<button class="btn btn--neutral btn--sm" data-act="demoExit">Выйти</button>`) : ""}
@@ -1738,7 +1739,9 @@
   }
   SCREENS.mail = () => {
     if (!BOUND_GROUP) return { title: "Почта", back: "#account", nav: "settings", html: empty("email", "Сначала откройте свою группу", "Войдите в аккаунт и выберите группу — её письма будут видны только вам и вашему заместителю.") + `<a class="btn btn--primary" href="#account">Открыть аккаунт</a>` };
-    const items = MAIL_STATE.groupId === BOUND_GROUP.id ? MAIL_STATE.items : [], loading = MAIL_STATE.loading;
+    const sameGroup = MAIL_STATE.groupId === BOUND_GROUP.id;
+    const items = sameGroup ? MAIL_STATE.items : [], sources = sameGroup ? MAIL_STATE.sources : [], loading = MAIL_STATE.loading;
+    const forwarding = sources.find(s => s.kind === "forward");
     const teachers = DB.teachers.flatMap(t => String(t.email || "").split(/[,;\s]+/).filter(x => x.includes("@")));
     const address = BOUND_GROUP.mail_address || "";
     const cards = items.map(it => { const m = it.mail, s = it.suggestion || {}, kind = s.kind || "info";
@@ -1752,18 +1755,18 @@
       actions: [["download", "Обновить письма", "mailRefresh"]],
       after: () => { if ((!MAIL_STATE.loaded || MAIL_STATE.groupId !== BOUND_GROUP.id) && !MAIL_STATE.loading) refreshMail(); },
       html: `<section class="card mail-connect"><div class="card__head">${ic("email")}<h3>Почта группы</h3></div>
-        <p>Адрес для пересылки писем преподавателей:</p><div class="mail-connect__address"><code>${esc(address)}</code>${copyBtn(address, "Скопировать адрес", "btn btn--soft btn--sm")}</div>
-        <p class="muted">Адрес пересылки заработает после настройки почтового домена. Сейчас можно подключить свой ящик ниже.</p>
+        ${forwarding?.configured ? `<p>На этот адрес преподаватели могут писать напрямую. Можно также настроить пересылку с другого ящика.</p><div class="mail-connect__address"><code>${esc(address)}</code>${copyBtn(address, "Скопировать адрес", "btn btn--soft btn--sm")}</div>`
+          : `<p class="muted">Адрес пересылки ещё не подключён. Если у группы уже есть почтовый ящик, подключите его ниже.</p>`}
         <details><summary>Какие письма попадут в приложение</summary><p>Только письма от адресов преподавателей, указанных в этой группе: ${teachers.length ? teachers.map(esc).join(", ") : "пока ни одного адреса"}. ${teachers.length ? "" : "Добавьте почту в карточке преподавателя."}</p></details></section>
         <section class="card mail-connect"><div class="card__head">${ic("email")}<h3>Подключённые ящики</h3></div>
-          ${MAIL_STATE.sources.filter(s => s.kind === "imap").map(s => `<div class="mail-source"><div><b>${esc(s.login)}</b><small>${esc(s.provider)} · ${s.status === "error" ? `ошибка: ${esc(s.error || "проверьте пароль")}` : "подключено"}</small></div><button class="btn btn--neutral btn--sm" data-act="mailRemove" data-id="${esc(s.id)}">Отключить</button></div>`).join("") || `<p class="muted">Пока нет подключённых ящиков.</p>`}
+          ${sources.filter(s => s.kind === "imap").map(s => `<div class="mail-source"><div><b>${esc(s.login)}</b><small>${esc(s.provider)} · ${s.status === "error" ? `ошибка: ${esc(s.error || "проверьте пароль")}` : "подключено"}</small></div><button class="btn btn--neutral btn--sm" data-act="mailRemove" data-id="${esc(s.id)}">Отключить</button></div>`).join("") || `<p class="muted">Пока нет подключённых ящиков.</p>`}
           <form data-mail-connect class="account__form"><div class="field"><label for="imap-provider">Почта</label><select id="imap-provider" name="provider"><option value="yandex">Яндекс</option><option value="mailru">Mail</option><option value="gmail">Gmail</option><option value="other">Другой IMAP</option></select></div>
             <div class="field"><label for="imap-login">Адрес ящика</label><input id="imap-login" name="login" type="email" autocomplete="email" required></div>
             <div class="field"><label for="imap-password">Пароль приложения</label><input id="imap-password" name="password" type="password" autocomplete="off" required></div>
             <div class="field"><label for="imap-host">IMAP-сервер (только для «Другой IMAP»)</label><input id="imap-host" name="host" placeholder="imap.example.ru"></div>
             <p class="account__help">Создайте отдельный пароль приложения в настройках своей почты. Основной пароль от ящика сюда не вводите. Читаются только письма от преподавателей группы.</p>${formErr}<button class="btn btn--primary" type="submit">Подключить ящик</button></form></section>
         <div class="section-head"><h2>Входящие ${items.length ? `· ${items.length}` : ""}</h2></div>
-        ${MAIL_STATE.error ? `<p class="account__note" role="alert">${esc(MAIL_STATE.error)}</p>` : ""}
+        ${sameGroup && MAIL_STATE.error ? `<p class="account__note" role="alert">${esc(MAIL_STATE.error)}</p>` : ""}
         ${loading ? `<p class="muted">Загружаем письма…</p>` : items.length ? `<div class="grid grid--cols">${cards}</div>` : `<p class="muted">Новых писем нет. Письма преподавателей появятся здесь после пересылки.</p>`}` };
   };
 
@@ -1908,6 +1911,27 @@
   const pollBars = (p, st) => { const max = Math.max(1, ...st.counts);
     return p.options.map((o, i) => { const pc = st.list.length ? Math.round(st.counts[i] / st.list.length * 100) : 0;
       return `<div class="bar-row"><div class="bar-row__head"><span title="${esc(o)}">${i + 1}. ${esc(o)}</span><b class="num">${st.counts[i]}<small class="muted"> · ${pc}%</small></b></div>${bar(pc, st.counts[i] === max && st.counts[i] ? "var(--primary)" : "var(--line)", true)}</div>`; }).join(""); };
+  async function refreshTelegramPolls() {
+    const panel = $("#telegram-polls"), groupId = BOUND_GROUP?.id;
+    if (!panel || !groupId) return;
+    const status = $("[role=status]", panel), list = $(".stack", panel), button = $("button", panel);
+    button.disabled = true;
+    status.textContent = "Загружаем опросы…";
+    try {
+      const data = await ACCOUNT_API.telegram.polls(groupId);
+      if (!panel.isConnected || BOUND_GROUP?.id !== groupId) return;
+      status.textContent = !data.configured ? "Бот ещё не подключён к этой группе."
+        : !data.items.length ? "Бот пока не получил ни одного опроса."
+        : "Показаны последние данные, полученные ботом.";
+      list.innerHTML = data.items.map(p => `<article class="card"><h3 class="task__title">${esc(p.question)}</h3>
+        <p class="muted">${p.closed ? "Завершён" : "Открыт"} · голосовавших: ${esc(p.total)} · ${esc(new Date(p.updated_at).toLocaleString("ru-RU"))}</p>
+        <ul>${p.options.map(o => `<li style="overflow-wrap:anywhere">${esc(o.text)} — ${esc(o.votes)}</li>`).join("")}</ul></article>`).join("");
+    } catch (e) {
+      status.textContent = e.message || "Не удалось обновить опросы.";
+    } finally {
+      button.disabled = false;
+    }
+  }
   function pollsScreen() {
     const closed = S.pollsClosed, all = DB.polls.slice().sort((a, b) => (b.created || 0) - (a.created || 0)), items = all.filter(p => !!p.closed === closed);
     const nOpen = all.filter(p => !p.closed).length;
@@ -1917,7 +1941,15 @@
         <div class="work__foot">${p.due ? dueHtml({ due: p.due, done: p.closed }) : `<div class="due due--ok">${p.multi ? "несколько ответов" : "один ответ"}</div>`}<span class="muted">${st.left.length ? `не ответили: ${st.left.length}` : "ответили все"}</span></div></a>`; };
     return {
       title: "Опросы", sub: nOpen ? `${nOpen} ${plural(nOpen, ["идёт", "идут", "идут"])}` : "голосования группы", nav: "tasks", fab: "poll",
+      after: () => $("#telegram-polls")?.addEventListener("toggle", e => {
+        if (e.currentTarget.open && !e.currentTarget.dataset.loaded) {
+          e.currentTarget.dataset.loaded = "1";
+          refreshTelegramPolls();
+        }
+      }),
       html: `${extraTabs()}
+        ${BOUND_GROUP && accountReady() ? `<details id="telegram-polls" class="card tpl-keys"><summary><b>Опросы из Telegram</b></summary>
+          <p class="muted" role="status"></p><button class="btn btn--soft btn--sm" data-act="telegramRefresh">Обновить</button><div class="stack"></div></details>` : ""}
         <div class="filter"><button aria-pressed="${!closed}" data-act="pollsClosed" data-v="0">Идут · ${nOpen}</button><button aria-pressed="${closed}" data-act="pollsClosed" data-v="1">Завершены · ${all.length - nOpen}</button></div>
         ${items.length ? `<div class="grid grid--cols">${items.map(card).join("")}</div>`
           : empty("poll", closed ? "Пока ничего" : "Опросов нет", closed ? "Завершённые опросы появятся здесь." : "Нажмите «+»: вопрос и варианты. Текст опроса скопируется для чата группы, а ответы отмечайте здесь — сразу видно, кто не ответил.")}`,
@@ -2191,6 +2223,77 @@
     if (m >= 8 * 60) { const t = reminderDigest(); if (t) notifyOnce(`digest|${k}`, "Сегодня у группы", t, "#home"); }
   }
 
+  let PUSH_DIALOG = null;
+  function showPushSettings(state, message = "") {
+    PUSH_DIALOG = state;
+    const { supported, subscription, key, active } = state;
+    const description = !supported ? "Пуши недоступны в этом браузере. На iPhone откройте приложение с домашнего экрана."
+      : !key ? "Сервер пока не настроен для отправки пушей."
+      : active ? "На этом устройстве включена пробная доставка."
+      : subscription ? "Подписку этого браузера нужно подключить заново."
+      : "Браузер попросит разрешение на уведомления.";
+    openSheet(`${sheetHead("bell", "var(--primary)", "Пуш-уведомления")}
+      <div id="push-device" class="stack"><p>${description}</p><p class="muted" role="status">${esc(message)}</p>
+        <div class="btn-row">${subscription ? `<button class="btn btn--neutral" data-act="pushDevice" data-mode="off">Отключить</button>` : ""}
+        ${key && supported && !subscription ? `<button class="btn btn--primary" data-act="pushDevice" data-mode="on">Включить</button>` : ""}
+        ${active && key ? `<button class="btn btn--primary" data-act="pushDevice" data-mode="test">Отправить проверку</button>` : ""}</div>
+      </div>`);
+  }
+  async function openPushSettings(button) {
+    const owner = ACCOUNT?.id;
+    const supported = isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    if (!supported) return showPushSettings({ supported });
+    button.disabled = true;
+    try {
+      const [registration, config] = await Promise.all([navigator.serviceWorker.getRegistration(), ACCOUNT_API.push.config()]);
+      if (!registration?.active) throw new Error("Обновите страницу, чтобы включить пуш-уведомления");
+      const subscription = await registration.pushManager.getSubscription();
+      const active = subscription ? (await ACCOUNT_API.push.status(subscription.endpoint)).active : false;
+      if (owner === ACCOUNT?.id && button.isConnected && sheet.hidden)
+        showPushSettings({ supported, registration, key: config.public_key, subscription, active, owner });
+    } catch (e) {
+      if (button.isConnected) toast(e.message, "info");
+    } finally {
+      button.disabled = false;
+    }
+  }
+  async function changePushDevice(button) {
+    const state = PUSH_DIALOG, panel = $("#push-device");
+    if (!state || !panel || state.owner !== ACCOUNT?.id) return;
+    const mode = button.dataset.mode;
+    const buttons = $$("button", panel);
+    buttons.forEach(el => { el.disabled = true; });
+    try {
+      if (mode === "on") {
+        const key = state.key.replace(/-/g, "+").replace(/_/g, "/");
+        const applicationServerKey = Uint8Array.from(atob(key), ch => ch.charCodeAt(0));
+        const subscription = await state.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+        if (state.owner !== ACCOUNT?.id) { await subscription.unsubscribe(); return; }
+        try { await ACCOUNT_API.push.save(subscription.toJSON()); }
+        catch (e) { await subscription.unsubscribe().catch(() => {}); throw e; }
+        state.subscription = subscription;
+        state.active = true;
+      } else if (mode === "off") {
+        const subscription = state.subscription;
+        if (!await subscription.unsubscribe() && await state.registration.pushManager.getSubscription())
+          throw new Error("Браузер не отключил подписку. Повторите попытку.");
+        state.subscription = null;
+        state.active = false;
+        await ACCOUNT_API.push.remove(subscription.endpoint);
+      } else {
+        await ACCOUNT_API.push.test(state.subscription.endpoint);
+      }
+      if (panel.isConnected && PUSH_DIALOG === state)
+        showPushSettings(state, mode === "test" ? "Проверка отправлена. Посмотрите уведомления устройства." : "");
+    } catch (e) {
+      const message = e.name === "NotAllowedError" ? "Разрешите уведомления в настройках браузера." : e.message;
+      if (e.status === 410) state.active = false;
+      if (panel.isConnected && PUSH_DIALOG === state) showPushSettings(state, message);
+    } finally {
+      buttons.forEach(el => { el.disabled = false; });
+    }
+  }
+
   /* ================= КАРКАС ================= */
   const NAV = window.StarostaRoutes.sections;
   const app = $(".app"), view = $("#view"), topbar = $("#topbar"), nav = $("#nav"), fab = $("#fab"), actionbar = $("#actionbar");
@@ -2347,6 +2450,7 @@
   }
   function closeSheet() {
     if (sheet.hidden || sheet.classList.contains("is-closing")) return;
+    if ($("#push-device", sheet)) PUSH_DIALOG = null;
     const done = () => {
       sheet.hidden = true;
       sheet.innerHTML = "";
@@ -3420,6 +3524,9 @@
       showNote("Напоминания включены", "Так будут выглядеть подсказки о парах, сроках и днях рождения", "#settings");
     },
     notifyOff: () => { DB.settings.notify = false; persist(); render(true); toast("Напоминания выключены"); },
+    pushSettings: openPushSettings,
+    pushDevice: changePushDevice,
+    telegramRefresh: refreshTelegramPolls,
     delDoc: el => delAndBack(el, "docs", "Удалить документ и все отметки по нему?", "#tasks/docs"),
     delPoll: el => delAndBack(el, "polls", "Удалить опрос и все ответы?", "#tasks/polls"),
     delTpl: el => del(el, "templates", "Удалить шаблон?"),

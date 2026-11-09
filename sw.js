@@ -2,7 +2,7 @@
    использует файлы из одного комплекта. Запросы к API и НГТУ не кешируются. */
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = "starosta:" + new URL(SCOPE).pathname + ":";
-const CACHE = CACHE_PREFIX + "v42";
+const CACHE = CACHE_PREFIX + "v43";
 const SHELL = ["./", "index.html", "privacy.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/config.js", "js/api.js", "js/routes.js", "js/app.js", "demo/group.json",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
   "assets/icons-fill.woff2", "assets/onest-cyrillic.woff2", "assets/onest-latin.woff2"];
@@ -32,6 +32,18 @@ self.addEventListener("fetch", e => {
     if (cached) return cached;
     return fetch(req, { cache: "no-cache", signal: AbortSignal.timeout?.(8000) }).catch(() => Response.error());
   })());
+});
+
+self.addEventListener("push", event => {
+  let payload;
+  try { payload = event.data?.json(); } catch { return; }
+  if (payload?.kind !== "test") return;
+  event.waitUntil(self.registration.showNotification("Помощник старосты", {
+    body: "Проверка пуш-уведомлений прошла.",
+    icon: new URL("assets/icon.png", SCOPE).href,
+    tag: "starosta-push-test",
+    data: { url: "#settings" },
+  }));
 });
 
 // нажали на напоминание — открываем приложение на нужном экране

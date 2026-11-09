@@ -67,6 +67,16 @@
       accept: (id, itemId, type, entityId) => post(`${g(id)}/inbox/${encodeURIComponent(itemId)}/accept`, { type, id: entityId }),
       dismiss: (id, itemId) => post(`${g(id)}/inbox/${encodeURIComponent(itemId)}/dismiss`),
     },
+    push: {
+      config: () => get("/push/config"),
+      status: endpoint => post("/push/device/status", { endpoint }),
+      save: subscription => put("/push/device", subscription),
+      remove: endpoint => post("/push/device/remove", { endpoint }),
+      test: endpoint => post("/push/test", { endpoint }),
+    },
+    telegram: {
+      polls: id => get(`${g(id)}/telegram/polls`),
+    },
   };
 
   /* ---------- слияние изменений с двух устройств ----------

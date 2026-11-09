@@ -4,7 +4,7 @@
 CREATE TABLE groups (
 	id VARCHAR(32) NOT NULL, 
 	title VARCHAR(60) NOT NULL, 
-	university VARCHAR(120) NOT NULL,
+	university VARCHAR(120) NOT NULL, 
 	nntu_group VARCHAR(60) NOT NULL, 
 	mail_code VARCHAR(40) NOT NULL, 
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL, 
@@ -114,6 +114,17 @@ CREATE TABLE password_resets (
 
 CREATE INDEX ix_password_resets_user_id ON password_resets (user_id);
 
+CREATE TABLE push_devices (
+	id VARCHAR(64) NOT NULL, 
+	user_id VARCHAR(32) NOT NULL, 
+	subscription JSON NOT NULL, 
+	last_test_at TIMESTAMP WITH TIME ZONE, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_push_devices_user_id ON push_devices (user_id);
+
 CREATE TABLE sessions (
 	id VARCHAR(32) NOT NULL, 
 	user_id VARCHAR(32) NOT NULL, 
@@ -127,6 +138,28 @@ CREATE TABLE sessions (
 
 CREATE UNIQUE INDEX ix_sessions_token_hash ON sessions (token_hash);
 CREATE INDEX ix_sessions_user_id ON sessions (user_id);
+
+CREATE TABLE telegram_polls (
+	group_id VARCHAR(32) NOT NULL, 
+	chat_id BIGINT NOT NULL, 
+	poll_id VARCHAR(128) NOT NULL, 
+	message_id BIGINT NOT NULL, 
+	last_update_id BIGINT NOT NULL, 
+	snapshot JSON NOT NULL, 
+	updated_at TIMESTAMP WITH TIME ZONE NOT NULL, 
+	PRIMARY KEY (group_id, chat_id, poll_id), 
+	FOREIGN KEY(group_id) REFERENCES groups (id) ON DELETE CASCADE
+);
+
+
+CREATE TABLE mail_cursors (
+	source_id VARCHAR(32) NOT NULL, 
+	uidvalidity BIGINT NOT NULL, 
+	last_uid BIGINT NOT NULL, 
+	PRIMARY KEY (source_id), 
+	FOREIGN KEY(source_id) REFERENCES mail_sources (id) ON DELETE CASCADE
+);
+
 
 CREATE TABLE mail_messages (
 	id VARCHAR(32) NOT NULL, 

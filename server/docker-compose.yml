@@ -14,21 +14,30 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    volumes: [./secrets:/run/starosta:ro]
     depends_on: [db]
 
-  worker:  # IMAP-ящики, очистка старых писем, позже — напоминания и бот
+  worker:  # IMAP-ящики и очистка старых писем
     build: .
     restart: unless-stopped
     env_file: .env
     command: ["python", "-m", "app.worker"]
     depends_on: [db]
 
-  inbound:  # приём писем, пересланных на адрес группы (MX-запись домена → этот сервер)
+  inbound:  # закрытый SMTP для отдельного доверенного шлюза, публичный вход — через API
+    profiles: ["trusted-smtp"]
     build: .
     restart: unless-stopped
     env_file: .env
     command: ["python", "-m", "app.mail.inbound"]
-    ports: ["25:2525"]
+    depends_on: [db]
+
+  telegram:
+    profiles: ["telegram"]
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.telegram"]
     depends_on: [db]
 
   caddy:  # HTTPS-сертификат сам; отдаёт приложение (PWA) и проксирует /api на api:8000
@@ -38,6 +47,7 @@ services:
     volumes:  # только файлы приложения — не весь репозиторий (там server/.env с паролями)
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../index.html:/srv/app/index.html:ro
+      - ../privacy.html:/srv/app/privacy.html:ro
       - ../manifest.webmanifest:/srv/app/manifest.webmanifest:ro
       - ../sw.js:/srv/app/sw.js:ro
       - ../css:/srv/app/css:ro

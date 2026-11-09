@@ -65,7 +65,10 @@ def parse_email(raw: bytes) -> ParsedMail:
     body = msg.get_body(preferencelist=("plain", "html"))
     text = ""
     if body is not None:
-        content = body.get_content()
+        try:
+            content = body.get_content()
+        except LookupError:
+            content = (body.get_payload(decode=True) or b"").decode("utf-8", errors="replace")
         text = html_to_text(content) if body.get_content_type() == "text/html" else content.strip()
     atts = []
     for part in msg.iter_attachments():
@@ -95,8 +98,12 @@ def normalize_addr(addr: str) -> str:
 def match_teacher(from_addr: str, teachers: list[dict]) -> dict | None:
     """Преподаватель из списка группы (teachers[].email в data.json) или None."""
     want = normalize_addr(from_addr)
+    if not want or "@" not in want:
+        return None
     for t in teachers:
-        for a in re.split(r"[\s,;]+", t.get("email") or ""):
+        if not isinstance(t, dict) or not isinstance(t.get("email"), str):
+            continue
+        for a in re.split(r"[\s,;]+", t["email"]):
             if a and normalize_addr(a) == want:
                 return t
     return None

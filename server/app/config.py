@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     attachment_max_mb: int = 10
     # как часто проверять почтовые ящики, подключённые по IMAP
     imap_poll_minutes: int = 5
+    mail_imap_hosts: str = ""  # дополнительные доверенные IMAP-хосты через запятую
+    mail_relay_token: str = ""  # секрет доверенного шлюза входящей почты
+    push_public_key: str = ""
+    push_private_key_file: str = ""
+    push_subject: str = ""
+    telegram_token: str = ""
+    telegram_chat_id: int = 0
+    telegram_group_id: str = ""
 
 
 settings = Settings()

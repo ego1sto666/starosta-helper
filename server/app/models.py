@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -147,6 +147,32 @@ class InboxItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decided_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class MailCursor(Base):
+    __tablename__ = "mail_cursors"
+    source_id: Mapped[str] = mapped_column(ForeignKey("mail_sources.id", ondelete="CASCADE"), primary_key=True)
+    uidvalidity: Mapped[int] = mapped_column(BigInteger)
+    last_uid: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class PushDevice(Base):
+    __tablename__ = "push_devices"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    subscription: Mapped[dict] = mapped_column(JSON)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TelegramPoll(Base):
+    __tablename__ = "telegram_polls"
+    group_id: Mapped[str] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    poll_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    last_update_id: Mapped[int] = mapped_column(BigInteger)
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class AuditLog(Base):

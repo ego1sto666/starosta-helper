@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .db import init_db
-from .routers import auth, groups, mail
+from .routers import auth, groups, mail, push, telegram
 
 
 @asynccontextmanager
@@ -34,7 +34,8 @@ app.add_middleware(CORSMiddleware, allow_origins=[settings.app_origin], allow_cr
 @app.middleware("http")
 async def csrf_guard(request: Request, call_next):
     """Изменяющие запросы — только с заголовком X-Starosta: другой сайт не сможет его поставить без разрешения CORS."""
-    if request.method in ("POST", "PUT", "DELETE") and request.headers.get("x-starosta") != "1":
+    relay_request = request.method == "POST" and request.url.path.startswith("/integrations/mail/")
+    if request.method in ("POST", "PUT", "DELETE") and not relay_request and request.headers.get("x-starosta") != "1":
         return JSONResponse({"detail": "Нет заголовка X-Starosta"}, status_code=403)
     return await call_next(request)
 
@@ -42,6 +43,9 @@ async def csrf_guard(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(groups.router)
 app.include_router(mail.router)
+app.include_router(mail.relay)
+app.include_router(telegram.router)
+app.include_router(push.router)
 
 
 @app.get("/health", tags=["Служебное"])

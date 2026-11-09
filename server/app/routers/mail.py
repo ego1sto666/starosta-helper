@@ -2,20 +2,52 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from secrets import compare_digest
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..deps import current_user, membership
 from ..mail.imap import HOSTS, connect
+from ..mail.service import MAX_MESSAGE_BYTES, ingest
 from ..models import AuditLog, Group, InboxItem, MailMessage, MailSource, User
 from ..security import encrypt_secret
 
 router = APIRouter(prefix="/groups/{group_id}", tags=["Почта"])
+relay = APIRouter(tags=["Почтовый шлюз"])
+
+
+def deliver_mail(code: str, raw: bytes) -> None:
+    with SessionLocal() as db:
+        group = db.scalar(select(Group).where(Group.mail_code == code.lower()))
+        if not group:
+            raise HTTPException(404, "Неизвестный адрес группы")
+        source = db.scalar(select(MailSource).where(MailSource.group_id == group.id, MailSource.kind == "forward"))
+        ingest(db, group, raw, source)
+
+
+@relay.post("/integrations/mail/{code}", status_code=204)
+async def receive_mail(code: str, request: Request) -> None:
+    token = settings.mail_relay_token
+    if len(token) < 32:
+        raise HTTPException(404, "Почтовый шлюз не подключён")
+    if not compare_digest(request.headers.get("x-starosta-mail-token", "").encode(), token.encode()):
+        raise HTTPException(403, "Недоступно")
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "message/rfc822":
+        raise HTTPException(415, "Ожидается исходное письмо в формате message/rfc822")
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_MESSAGE_BYTES:
+            raise HTTPException(413, "Письмо слишком большое")
+        raw.extend(chunk)
+    if not raw:
+        raise HTTPException(400, "Пустое письмо")
+    await run_in_threadpool(deliver_mail, code, bytes(raw))
 
 
 def source_out(s: MailSource, g: Group) -> dict:
@@ -23,6 +55,7 @@ def source_out(s: MailSource, g: Group) -> dict:
            "last_checked_at": s.last_checked_at.isoformat() if s.last_checked_at else None}
     if s.kind == "forward":
         out["address"] = f"{g.mail_code}@{settings.mail_domain}"
+        out["configured"] = len(settings.mail_relay_token) >= 32
     else:
         out["login"] = s.imap_login  # пароль/токен наружу не отдаём никогда
     return out
@@ -45,11 +78,15 @@ class ImapIn(BaseModel):
 @router.post("/mail/sources", status_code=201)
 def add_imap(group_id: str, body: ImapIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     membership(db, user, group_id, ("head",))
-    host = body.host.strip() or HOSTS.get(body.provider, "")
+    host = body.host.strip().lower() or HOSTS.get(body.provider, "")
     if not host:
         raise HTTPException(422, "Укажите IMAP-сервер почты")
     if body.provider != "other" and host != HOSTS[body.provider]:
         raise HTTPException(422, "Для выбранной почты нельзя менять IMAP-сервер")
+    if body.provider == "other" and host not in HOSTS.values() and host not in {
+        h.strip().lower() for h in settings.mail_imap_hosts.split(",") if h.strip()
+    }:
+        raise HTTPException(422, "Этот IMAP-сервер должен разрешить администратор сайта")
     s = MailSource(group_id=group_id, kind="imap", provider=body.provider, imap_host=host,
                    imap_login=body.login.strip(), secret_enc=encrypt_secret(body.password))
     try:

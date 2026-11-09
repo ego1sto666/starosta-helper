@@ -1,7 +1,7 @@
 """Фоновый процесс: раз в несколько минут проверяет почтовые ящики (IMAP) и чистит старые письма.
 
 Запуск рядом с API:  python -m app.worker   (в docker-compose — отдельный сервис worker)
-Позже сюда же: напоминания (веб-пуш), проверка расписания НГТУ, Telegram-бот (см. design/automation.md).
+Сборщик Telegram работает отдельным процессом, чтобы долгий опрос не задерживал почту.
 """
 from __future__ import annotations
 
@@ -22,7 +22,13 @@ log = logging.getLogger("starosta.worker")
 def tick() -> None:
     with SessionLocal() as db:
         for src in db.scalars(select(MailSource).where(MailSource.kind == "imap", MailSource.status != "paused")).all():
-            n = poll(db, src)
+            source_id = src.id
+            try:
+                n = poll(db, src)
+            except Exception as error:
+                db.rollback()
+                log.warning("Ошибка проверки источника %s: %s", source_id, type(error).__name__)
+                continue
             if n:
                 log.info("Группа %s: новых писем %s", src.group_id, n)
         removed = cleanup(db)
