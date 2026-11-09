@@ -661,6 +661,7 @@
   /* ----- Сегодня ----- */
   SCREENS.home = () => {
     const info = weekInfo(TODAY), today = dayLessons(TODAY);
+    const lessonCount = activeOnly(today).length;
     const live = today.find(l => lessonState(l, TODAY) === "live");
     const next = today.find(l => lessonState(l, TODAY) === "future" && lessonSpan(l)[0]);
     const open = DB.tasks.filter(t => !t.done);
@@ -724,17 +725,14 @@
       html: `
         <div class="home-top"><section class="hero"><h1>Сегодня</h1>
           <p><b>${fmtLong(TODAY)}</b> · ${esc(info.label)}</p></section>${nowCard}</div>
-        ${notices ? `<div class="stack">${notices}</div>` : ""}
-        ${tiles ? `<div class="tiles">${tiles}</div>` : ""}
-        <div class="split">
+        <div class="split home-workspace">
           <div class="stack">
-            ${sectionHead("schedule", (() => { const a = activeOnly(today), s = a.length && lessonSpan(a[0])[0], e = a.length && lessonSpan(a[a.length - 1])[1];
-              return a.length ? `Пары сегодня. ${a.length} ${plural(a.length, ["пара", "пары", "пар"])}${s && e ? `, ${s}–${e}` : ""}` : "Пары сегодня"; })(), `<a class="link" href="#journal">Журнал</a>`)}
-            ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "Можно выдохнуть. Расписание на неделю — во вкладке «Пары».")}
+            ${sectionHead("schedule", "Пары сегодня", `<a class="link" href="#journal">Журнал</a>`, lessonCount || undefined)}
+            ${today.length ? timeline(today, TODAY, "home") : empty("coffee", info.active ? "Сегодня пар нет" : info.label, "В журнале можно посмотреть расписание на другие дни.", '<a class="btn btn--soft" href="#journal">Открыть журнал</a>')}
             ${tomorrow.length ? `<div class="tomorrow-row"><a class="tomorrow" href="#journal" data-act="schedTomorrow">${ic("right")}Завтра ${tomorrow.length} ${plural(tomorrow.length, ["пара", "пары", "пар"])}, начало в ${lessonSpan(tomorrow[0])[0]} — ${esc(baseSubject(tomorrow[0].subject))}</a>
               <button type="button" class="icon-btn" data-act="copyText" data-t="${esc(dayText(addDays(TODAY, 1)))}" aria-label="Скопировать расписание на завтра для чата" title="Скопировать расписание на завтра для чата">${ic("chat")}</button></div>` : ""}
           </div>
-          <aside class="split__side" aria-label="Сводка">${backupTip}${side}</aside>
+          <aside class="split__side" aria-label="Сводка">${notices}${tiles ? `<div class="tiles">${tiles}</div>` : ""}${backupTip}${side}</aside>
         </div>`,
     };
   };
@@ -871,12 +869,15 @@
       : empty("group", "В группе нет студентов", "Добавьте их по одному кнопкой «+» или загрузите таблицу.", `<button class="btn btn--soft" data-act="wizardRoster">${ic("add_many")}Импортировать состав</button>`);
     return {
       title: "Группа", sub: `${groupName()} · ${list.length} ${plural(list.length, ["студент", "студента", "студентов"])}`, nav: "group", fab: isT ? "teacher" : "student",
-      actions: [["subgroups", "Подгруппы", "go", "#subgroups"], ["contact", "Контакты из таблицы или телефона", "form", "contacts"], ["add_many", "Добавить списком", "form", "addMany"]],
+      actions: [["contact", "Контакты из таблицы или телефона", "form", "contacts"], ["add_many", "Добавить списком", "form", "addMany"]],
       html: `
         <div class="seg seg--fit" role="tablist" aria-label="Список">
           <button role="tab" aria-selected="${!isT}" data-go="#group/students">Студенты · ${list.length}</button>
           <button role="tab" aria-selected="${isT}" data-go="#group/teachers">Преподаватели · ${DB.teachers.length}</button></div>
-        <label class="search">${ic("search")}<span class="sr">Поиск</span><input type="search" id="search" placeholder="${isT ? "Поиск по ФИО или предмету" : "Поиск по ФИО или телефону"}" autocomplete="off"></label>
+        <div class="group-tools">
+          <label class="search">${ic("search")}<span class="sr">Поиск</span><input type="search" id="search" placeholder="${isT ? "Поиск по ФИО или предмету" : "Поиск по ФИО или телефону"}" autocomplete="off"></label>
+          <a class="btn btn--soft" href="#subgroups">${ic("subgroups")}Подгруппы</a>
+        </div>
         ${body}
         <div id="noResults" hidden>${empty("search", "", "Никого не нашли. Проверьте написание или поищите по фамилии.")}</div>`,
       after: bindSearch,
@@ -1407,12 +1408,17 @@
     return {
       title: "Настройки", back: "#home", nav: "settings",
       html: `
-        ${sectionHead("sun", "Оформление. Тема и цвета")}
-        <div class="themes" role="radiogroup" aria-label="Тема">${THEMES.map(t => `<button class="theme-card" role="radio" aria-checked="${cur === t.id}" data-act="theme" data-t="${t.id}">
+        <div class="settings-links" role="group" aria-label="Разделы настроек">
+          ${[["theme", "Тема"], ["study", "Группа и учёба"], ["data", "Данные"], ["app", "Приложение"]].map(([id, label]) => `<button type="button" data-act="settingsJump" data-id="${id}">${label}</button>`).join("")}
+        </div>
+        <section class="stack settings-section" id="settings-theme" tabindex="-1" aria-label="Тема оформления">
+        ${sectionHead("sun", "Тема оформления")}
+        <div class="themes" role="group" aria-label="Тема">${THEMES.map(t => `<button type="button" class="theme-card" aria-pressed="${cur === t.id}" data-act="theme" data-t="${t.id}">
           <span class="theme-card__preview" style="background:${t.bg};color:${t.fg}"><b>Аа</b><span>${t.dots.map(c => `<i style="background:${c}"></i>`).join("")}</span></span>
           <span class="theme-card__name">${t.n}</span></button>`).join("")}</div>
+        </section>
         <div class="grid grid--cols2">
-          <div class="stack">
+          <section class="stack settings-section" id="settings-study" tabindex="-1" aria-label="Группа и учебный год">
             ${sectionHead("school", "Группа и учебный год")}
             <section class="card" style="padding:4px 14px">
               ${row("Название группы", esc(DB.settings.group || "не указано"), editBtn("groupName"))}
@@ -1434,9 +1440,10 @@
                   sup && perm !== "denied" ? (on ? `<button class="btn btn--neutral btn--sm" data-act="notifyOff">Выключить</button>` : `<button class="btn btn--primary btn--sm" data-act="notifyOn">${ic("bell")}Включить</button>`) : ""); })()}
               ${row("Шаблоны сообщений", "Свои заготовки для чата и преподавателей — с подстановкой отсутствующих, должников, расписания", `<a class="btn btn--neutral btn--sm" href="#templates">${ic("chat")}Открыть</a>`)}
             </section>
-          </div>
+          </section>
           <div class="stack">
-            ${sectionHead("download", BOUND_GROUP ? "Данные группы" : "Данные. Только на этом устройстве")}
+            <section class="stack settings-section" id="settings-data" tabindex="-1" aria-label="Данные группы">
+            ${sectionHead("download", "Данные группы")}
             <section class="card" style="padding:4px 14px">
               ${row("Аккаунт старосты", BOUND_GROUP ? `Группа ${esc(BOUND_GROUP.title)} · ${SYNC_STATE === "offline" ? "сохранена на устройстве" : "синхронизация включена"}` : "Войдите, чтобы сохранять данные группы на сервере.", `<a class="btn btn--soft btn--sm" href="#account">${ic("lock")}Открыть</a>`)}
               ${row("Где хранятся", BOUND_GROUP ? "В этом браузере и на сервере вашего аккаунта." : "Только в этом браузере на этом устройстве.")}
@@ -1445,6 +1452,8 @@
               ${row("Загрузить из файла", "Заменить данные этого браузера копией или data.json из программы на ПК", `<button class="btn btn--neutral btn--sm" data-act="importJson">Выбрать файл</button>`)}
               ${row("Удалить всё", "Стереть данные группы из этого браузера", `<button class="btn btn--danger btn--sm" data-act="wipe">${ic("delete")}Удалить</button>`)}
             </section>
+            </section>
+            <section class="stack settings-section" id="settings-app" tabindex="-1" aria-label="Приложение">
             ${sectionHead("info", "Приложение")}
             <section class="card" style="padding:4px 14px">
               ${row("Код-пароль", pinSet() ? "Включён — спросим код при открытии и после 5 минут в фоне" : "Выключен. Защитит телефоны и дни рождения одногруппников, если телефон возьмут в руки",
@@ -1455,6 +1464,7 @@
               ${FEEDBACK_URL ? row("Оценить приложение", "Короткая анкета: что нравится, что неудобно, чего не хватает", feedbackBtn("btn btn--soft btn--sm")) : ""}
               ${isDemo() ? row("Пример", "Сейчас открыт пример со случайными отметками", `<button class="btn btn--neutral btn--sm" data-act="demoExit">Выйти</button>`) : ""}
               ${row("О приложении", "Неофициальный помощник для старост разных вузов. Для групп НГТУ доступна загрузка расписания с открытого сайта вуза.")}
+            </section>
             </section>
           </div>
         </div>`,
@@ -1638,19 +1648,19 @@
       title: "Помощник старосты", nav: "home", welcome: true,
       after: fillGroups,
       html: `<div class="welcome">
-        <section class="hero"><h1>Помощник старосты.<span> Вся группа под рукой.</span></h1>
-          <p>Расписание, посещаемость и дела группы — для старост любого вуза. Без аккаунта данные остаются на этом устройстве.</p></section>
+        <section class="hero"><h1>Помощник старосты</h1>
+          <p>Смотрите расписание, отмечайте посещаемость и ведите дела группы. Без аккаунта данные остаются на этом устройстве.</p></section>
         <section class="card welcome__card"><div class="card__head">${ic("school")}<h3>Настроить свою группу</h3></div>
           <p class="muted" style="font-size:14px;margin-bottom:12px">Укажете вуз и группу, загрузите состав и расписание из таблиц. Можно пропустить шаг и вернуться позже.</p>
           <button class="btn btn--primary btn--block btn--lg" data-act="startWizard">Начать настройку</button></section>
         <section class="card welcome__card">
-          <div class="card__head">${ic("chart")}<h3>Просто посмотреть</h3></div>
+          <div class="card__head">${ic("chart")}<h3>Демонстрация</h3></div>
           <p class="muted" style="font-size:14px;margin-bottom:12px">Пример группы 26-ИВТ-2-1: состав и расписание группы, случайные отметки посещаемости и дела для демонстрации.</p>
-          <button class="btn btn--primary btn--block btn--lg" data-act="demo">Открыть пример</button>
+          <button class="btn btn--soft btn--block btn--lg" data-act="demo">Открыть пример</button>
           ${FEEDBACK_URL ? `<p class="hint" style="margin-top:10px">Понравилось или нет — <a href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">оцените сайт</a></p>` : ""}
         </section>
         <section class="card welcome__card">
-          <div class="card__head">${ic("school")}<h3>Ваша группа</h3></div>
+          <div class="card__head">${ic("school")}<h3>Расписание НГТУ</h3></div>
           <form data-form="welcome">
             ${field("Номер группы в НГТУ", `<input name="group" required list="nntuGroups" autocomplete="off" autocapitalize="characters" placeholder="26-ИВТ-2-1"><datalist id="nntuGroups"></datalist>`)}
             ${formErr}<button class="btn btn--soft btn--block btn--lg">${ic("download")}Загрузить расписание</button>
@@ -2050,7 +2060,7 @@
       topbar.innerHTML = `<div class="topbar__context"><span>Группа</span><b class="ellipsis">${esc(DB.settings.group || "Новая группа")}</b></div>
         <div class="topbar__actions"><a class="icon-btn" href="#settings" aria-label="Настройки" title="Настройки">${ic("cog")}</a></div>`;
     } else {
-      topbar.className = "topbar";
+      topbar.className = (scr.actions || []).length > 2 ? "topbar topbar--tools" : "topbar";
       topbar.innerHTML = `${scr.back ? `<a class="icon-btn back" href="${scr.back}" aria-label="Назад" title="Назад (Esc)">${ic("back")}</a>` : "<span></span>"}
         <div class="topbar__titles"><h1 class="topbar__title" title="${esc(scr.title)}">${esc(scr.title)}</h1>${scr.sub ? `<div class="topbar__sub">${esc(scr.sub)}</div>` : ""}</div>
         <div class="topbar__actions">${acts}</div>`;
@@ -2103,17 +2113,26 @@
   function openSheet(html) {
     clearTimeout(sheetT); sheet.classList.remove("is-closing");
     if (sheet.hidden) sheetReturn = document.activeElement;
-    sheet.innerHTML = `<div class="sheet__panel" role="dialog" aria-modal="true"><div class="sheet__grip"></div>${html}</div>`;
+    sheet.innerHTML = `<div class="sheet__panel" role="dialog" aria-modal="true" tabindex="-1"><div class="sheet__grip"></div>${html}</div>`;
     sheet.hidden = false;
+    app.inert = true;
+    const panel = $(".sheet__panel", sheet), heading = $("h2", panel);
+    if (heading) { heading.id = "sheet-title"; panel.setAttribute("aria-labelledby", heading.id); }
     if ($("#nntuGroups", sheet)) fillGroups();
     const lf = sheet.querySelector('form[data-form="many"], form[data-form="sgLists"]'); if (lf) listPreview(lf);
-    setTimeout(() => { const f = sheet.querySelector("input:not([type=radio]), select, textarea"); f && f.focus(); }, 50);
+    const input = $('input:not([type="radio"]):not([type="hidden"]):not([type="file"]):not(:disabled), select:not(:disabled), textarea:not(:disabled)', panel);
+    (input?.getClientRects().length ? input : panel).focus({ preventScroll: true });
   }
   function closeSheet() {
     if (sheet.hidden || sheet.classList.contains("is-closing")) return;
-    const done = () => { sheet.hidden = true; sheet.innerHTML = ""; sheet.classList.remove("is-closing"); };
+    const done = () => {
+      sheet.hidden = true;
+      sheet.innerHTML = "";
+      sheet.classList.remove("is-closing");
+      app.inert = false;
+      (sheetReturn?.isConnected ? sheetReturn : view).focus({ preventScroll: true });
+    };
     if (calm()) done(); else { sheet.classList.add("is-closing"); sheetT = setTimeout(done, 200); }
-    sheetReturn && sheetReturn.isConnected && sheetReturn.focus && sheetReturn.focus({ preventScroll: true });
   }
   sheet.addEventListener("click", e => { if (e.target === sheet) closeSheet(); });
   const sheetHead = (icon, c, title) => `<div class="sheet__head"><span class="badge" style="--c:${c}">${ic(icon)}</span><h2>${esc(title)}</h2><button type="button" class="icon-btn" style="margin-left:auto" data-act="closeSheet" aria-label="Закрыть">${ic("close")}</button></div>`;
@@ -3222,7 +3241,17 @@
       const s = DB.students.find(x => x.id === el.dataset.id); s.role = s.role === "deputy" ? "" : "deputy"; persist();
       const on = s.role === "deputy"; el.dataset.s = on ? "+" : "-"; el.querySelector(".mark__chip").innerHTML = on ? ic("tick") : "—"; render(true);
     },
-    theme: el => { setTheme(el.dataset.t); render(true); },
+    settingsJump: el => {
+      const section = document.getElementById(`settings-${el.dataset.id}`);
+      section.focus({ preventScroll: true });
+      section.scrollIntoView({ block: "start" });
+    },
+    theme: el => {
+      const theme = el.dataset.t;
+      setTheme(theme);
+      render(true);
+      $(`.theme-card[data-t="${CSS.escape(theme)}"]`)?.focus({ preventScroll: true });
+    },
     install: () => { if (deferredInstall) { deferredInstall.prompt(); deferredInstall = null; } else toast("Откройте меню браузера → «Установить приложение» или «Добавить на главный экран»", "info"); },
     exportJson: () => {
       const g = (DB.settings.nntu_group || DB.settings.group || "").replace(/[^\wа-яё-]+/gi, "_");
@@ -3324,10 +3353,25 @@
   });
   document.addEventListener("keydown", e => {
     const t = e.target;
+    if (e.key === "Tab" && !sheet.hidden) {
+      const panel = $(".sheet__panel", sheet);
+      const stops = $$('a[href], button, input, select, textarea, summary, [tabindex]', panel)
+        .filter(el => el.tabIndex >= 0 && !el.matches(":disabled") && el.getClientRects().length);
+      const first = stops[0], last = stops.at(-1);
+      if (!stops.includes(t) || (e.shiftKey ? t === first : t === last)) {
+        e.preventDefault();
+        ((e.shiftKey ? last : first) || panel).focus();
+      }
+      return;
+    }
     if ((e.key === "Enter" || e.key === " ") && t.matches && t.matches('[role="button"]:not(button), [role="link"]:not(a)')) { e.preventDefault(); t.click(); return; }
     if (e.key === "Escape") { if (!sheet.hidden) closeSheet(); else if (current && current.back && !t.matches("input, textarea")) location.hash = current.back; }
   });
   window.addEventListener("hashchange", () => render());
+  $(".skip").addEventListener("click", e => {
+    e.preventDefault();
+    view.focus();
+  });
   window.addEventListener("scroll", syncTopbar, { passive: true });
 
   /* ---------- тема ---------- */
