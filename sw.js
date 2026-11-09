@@ -2,7 +2,7 @@
    использует файлы из одного комплекта. Запросы к API и НГТУ не кешируются. */
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = "starosta:" + new URL(SCOPE).pathname + ":";
-const CACHE = CACHE_PREFIX + "v41";
+const CACHE = CACHE_PREFIX + "v42";
 const SHELL = ["./", "index.html", "privacy.html", "css/tokens.css", "css/app.css", "js/nntu.js", "js/xlsx.js", "js/config.js", "js/api.js", "js/routes.js", "js/app.js", "demo/group.json",
   "manifest.webmanifest", "assets/icon.png", "assets/icons.woff2",
   "assets/icons-fill.woff2", "assets/onest-cyrillic.woff2", "assets/onest-latin.woff2"];

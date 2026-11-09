@@ -1,0 +1,86 @@
+<!doctype html><meta charset="utf-8"><title>calendar</title>
+<iframe id="app" style="width:320px;height:640px;border:0"></iframe>
+<script>
+const report = [], errors = [];
+function check(ok, label) {
+  report.push((ok ? "OK " : "FAIL ") + label);
+  if (!ok) errors.push(label);
+}
+async function run() {
+  const subject = "Проектирование длинных названий, таблиц; и расписаний 📚".repeat(2);
+  const language = "Иностранный язык";
+  const lesson = (id, name, day, num, week = "all") => ({ id, subject: name, day, num, week, kind: "Практика" });
+  localStorage.setItem("starosta.data", JSON.stringify({
+    settings: {
+      group: "ПИ-21", term: { start: "2026-11-09", end: "2026-11-22", first_week_odd: true },
+      bells: ["8:00-9:35", "09:45-11:20", "11:35-13:10"],
+      subgroup_count: 2, own_split: [language], subgroup_subject_counts: { [language]: 2 },
+    },
+    lessons: [
+      lesson("common", subject, 0, 1),
+      lesson("first", "Лабораторная (подгруппа 1)", 0, 2),
+      lesson("second", "Лабораторная (подгруппа 2)", 0, 2),
+      lesson("even", "Только на чётной", 0, 3, "even"),
+      lesson("language1", language + " (подгруппа 1)", 1, 1),
+      lesson("language2", language + " (подгруппа 2)", 1, 1),
+      lesson("cancel", "Отменённая пара", 2, 1),
+      lesson("moved", "Перенесённая пара", 3, 1),
+    ],
+    oneoff: [
+      { ...lesson("new-slot", "Перенесённая пара", 5, 2), date: "2026-11-14", from: "2026-11-12|moved" },
+      { ...lesson("extra", "Разовая пара", 4, 1), date: "2026-11-13", start: "13:00", end: "14:35", room: "5; корпус, 2" },
+      { ...lesson("untimed", "Пара без времени", 5, 0), date: "2026-11-14" },
+    ],
+    overrides: {
+      "2026-11-09|common": { room: "Новая аудитория", teacher: "Новый преподаватель" },
+      "2026-11-11|cancel": { cancel: true },
+      "2026-11-12|moved": { cancel: true, moved_to: "new-slot" },
+    },
+    students: [{ id: "private", name: "Студент Тестовый" }],
+  }));
+  const frame = document.querySelector("#app");
+  await new Promise(resolve => {
+    frame.onload = resolve;
+    frame.src = "/index.html?calendar-test#journal/2026-11-11";
+  });
+  const w = frame.contentWindow, d = frame.contentDocument;
+  const $ = s => d.querySelector(s);
+  const press = () => $('[data-f="calendarExport"]').click();
+  const form = () => $('form[data-form="calendarExport"]');
+  let blob, filename;
+  w.URL.createObjectURL = value => { blob = value; return "blob:calendar-test"; };
+  w.HTMLAnchorElement.prototype.click = function () { filename = this.download; };
+  press();
+  const f = form();
+  check(f.from.value === "2026-11-09" && f.to.value === "2026-11-15", "По умолчанию выгружается открытая неделя");
+  check($("#sheet .sheet__panel").scrollWidth === $("#sheet .sheet__panel").clientWidth, "Форма помещается при ширине 320 px");
+  f.to.value = "2026-11-08";
+  f.requestSubmit();
+  check(!blob && !f.querySelector(".form-err").hidden, "Перевёрнутый период не скачивается");
+  f.to.value = "2026-11-15";
+  f.sg.value = "1";
+  f.elements["sg:" + language].value = "2";
+  f.requestSubmit();
+  check(filename === "raspisanie-2026-11-09-2026-11-15.ics" && blob?.type.startsWith("text/calendar"), "Скачивается файл .ics");
+  const raw = await blob.text(), text = raw.replace(/\r\n /g, "");
+  const blocks = text.match(/BEGIN:VEVENT[\s\S]*?END:VEVENT/g) || [];
+  const event = id => blocks.find(block => block.includes("|" + id + "@"));
+  check(blocks.length === 5 && !event("second") && !event("language1") && !!event("language2"), "Общие пары и отдельное деление по предмету учтены");
+  check(!event("cancel") && !event("even") && event("moved")?.includes("DTSTART:20261114T094500"), "Отмена, чётность и перенос учтены");
+  check(event("common")?.includes("LOCATION:Новая аудитория") && event("common").includes("Новый преподаватель")
+    && event("common").includes("DTSTART:20261109T080000"), "Берутся звонки и замены аудитории и преподавателя");
+  check(event("extra")?.includes("DTSTART:20261113T130000") && event("extra").includes("LOCATION:5\\; корпус\\, 2"), "Разовая пара сохраняет своё время и знаки в аудитории");
+  check(!text.includes("Студент Тестовый") && !event("untimed") && $("#toast").textContent.includes("пропущено"), "Данные студентов исключены, о пропуске пары без времени сообщается");
+  check(raw.endsWith("END:VCALENDAR\r\n") && raw.split("\r\n").every(line => new TextEncoder().encode(line).length <= 75)
+    && text.includes(subject.replace(/[;,]/g, "\\$&")), "Кириллица, эмодзи и длинные строки сохраняются по формату iCalendar");
+  await new Promise(resolve => setTimeout(resolve, 250));
+  press();
+  blob = null;
+  form().from.value = "2026-11-16";
+  form().to.value = "2026-11-16";
+  form().requestSubmit();
+  check(blob && (await blob.text()).includes("SUMMARY:Только на чётной"), "Следующая неделя включает пары по чётным неделям");
+}
+run().catch(e => { report.push("FAIL " + e.message); errors.push(e.message); })
+  .finally(() => fetch("/__save/result-calendar.txt", { method: "POST", body: [...report, "ERRORS: " + (errors.join(" | ") || "нет")].join("\n") }));
+</script>

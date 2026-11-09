@@ -250,6 +250,49 @@
     return out.sort(byTime);
   }
   const lessonsOn = d => dayPlan(d).filter(l => !l.cancelled);
+
+  /* ---------- экспорт расписания в iCalendar ---------- */
+  const calendarText = text => String(text).replace(/\\/g, "\\\\").replace(/\r\n?|\n/g, "\\n").replace(/[;,]/g, "\\$&");
+  function calendarFile(start, end, options) {
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Starosta Helper//Schedule//RU", "CALSCALE:GREGORIAN"];
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+    let count = 0, skipped = 0;
+    for (let date = start; date <= end; date = addDays(date, 1)) {
+      const day = key(date).replace(/-/g, "");
+      for (const lesson of lessonsOn(date)) {
+        const subject = baseSubject(lesson.subject), number = subgroupOf(lesson.subject);
+        const subgroup = Number(options["sg:" + subject] || options.sg);
+        if (number && subgroup && number !== subgroup) continue;
+        const [from, to] = lessonSpan(lesson).map(value => String(value).trim().padStart(5, "0"));
+        if (!time.test(from) || !time.test(to) || from >= to) { skipped++; continue; }
+        const id = lesson.one && lesson.from || attKey(date, lesson.id);
+        const description = [lesson.kind, number && `Подгруппа ${number}`, lesson.teacher && `Преподаватель: ${lesson.teacher}`].filter(Boolean);
+        lines.push("BEGIN:VEVENT", `UID:${calendarText(id)}@ego1sto666.github.io`, `DTSTAMP:${stamp}`,
+          `DTSTART:${day}T${from.replace(":", "")}00`, `DTEND:${day}T${to.replace(":", "")}00`,
+          `SUMMARY:${calendarText(subject)}`);
+        if (lesson.room) lines.push(`LOCATION:${calendarText(lesson.room)}`);
+        if (description.length) lines.push(`DESCRIPTION:${calendarText(description.join("\n"))}`);
+        lines.push("END:VEVENT");
+        count++;
+      }
+    }
+    lines.push("END:VCALENDAR");
+    // iCalendar считает длину строки в байтах. Разбиваем по символам UTF-8.
+    const encoder = new TextEncoder();
+    const content = lines.map(line => {
+      if (encoder.encode(line).length <= 75) return line;
+      let folded = "", bytes = 0;
+      for (const char of line) {
+        const width = encoder.encode(char).length;
+        if (bytes + width > 75) { folded += "\r\n "; bytes = 1; }
+        folded += char;
+        bytes += width;
+      }
+      return folded;
+    }).join("\r\n") + "\r\n";
+    return { content, count, skipped };
+  }
   const attKey = (d, id) => `${key(d)}|${id}`;
   function recordsOn(d) { const p = key(d) + "|"; return Object.entries(DB.attendance).filter(([k]) => k.startsWith(p)); }
   // пары дня для ленты: с отменёнными + отмеченные, которых в расписании уже нет
@@ -862,6 +905,7 @@
       title: "Журнал", sub: `${info.active ? info.week + "-я неделя · " : ""}отмечено ${marked} из ${live.length}`, nav: "journal", fab: "schedAdd",
       actions: [["chat", "Скопировать расписание дня для чата", "copyDay"], ...(nntuAvailable() ? [["download", "Обновить расписание с сайта НГТУ", "form", "nntu"]] : [])],
       html: `${strip}
+        <button class="btn btn--soft" data-act="form" data-f="calendarExport">${ic("calendar")}Скачать в календарь</button>
         <div class="bells only-narrow">${ic("clock")}Звонки: ${bl.length} ${plural(bl.length, ["пара", "пары", "пар"])}, ${bl[0][0]}–${bl[bl.length - 1][1]}</div>
         <div class="split">
           <div class="stack">
@@ -2730,6 +2774,31 @@
     journalDate: () => `${sheetHead("calendar", "var(--primary)", "К какой дате перейти?")}<form data-form="journalDate">
       ${field("Дата", `<input type="date" name="date" value="${key(S.journalDate || TODAY)}" required>`)}
       ${formErr}<button class="btn btn--primary btn--block">Открыть день</button></form>`,
+    calendarExport: () => {
+      const start = monday(S.journalDate || TODAY), own = new Set(ownSplit()), splits = new Map();
+      for (const lesson of [...DB.lessons, ...DB.oneoff]) {
+        const number = subgroupOf(lesson.subject), base = baseSubject(lesson.subject);
+        if (!number) continue;
+        const name = own.has(base) ? base : "";
+        if (!splits.has(name)) splits.set(name, new Set());
+        splits.get(name).add(number);
+      }
+      const choices = name => {
+        const numbers = new Set(splits.get(name));
+        for (let i = 1; i <= Math.min(6, splitSize(name)); i++) numbers.add(i);
+        return [...numbers].sort((a, b) => a - b).map(n => [n, `${n}-я подгруппа`]);
+      };
+      const subjects = [...own].filter(name => splits.has(name));
+      return `${sheetHead("calendar", "var(--primary)", "Скачать в календарь")}<form data-form="calendarExport">
+        ${field("Начало периода", `<input type="date" name="from" value="${key(start)}" required>`)}
+        ${field("Конец периода", `<input type="date" name="to" value="${key(addDays(start, 6))}" required>`)}
+        ${splits.size ? field("Подгруппа", select("sg", [["0", "Все подгруппы"], ...choices("")], "0")) : ""}
+        ${subjects.length ? `<details style="margin-bottom:12px"><summary>Отдельные подгруппы по предметам</summary>
+          ${subjects.map(name => field(esc(name), select(esc("sg:" + name), [["", "Как в основном делении"], ["0", "Все подгруппы"], ...choices(name)], ""))).join("")}
+        </details>` : ""}
+        <p class="muted" style="margin-bottom:12px">Время берётся из журнала. Импортируйте файл .ics в календарь с часовым поясом вуза. Изменения в журнале потребуют новой выгрузки.</p>
+        ${formErr}<button class="btn btn--primary btn--block">${ic("download")}Скачать .ics</button></form>`;
+    },
     confirm: (text, act, id, btn = "Удалить") => `${sheetHead("delete", "var(--bad)", text)}<p style="margin-bottom:16px">Это нельзя отменить.</p>
       <div class="btn-row"><button class="btn btn--neutral" data-act="closeSheet">Отмена</button><button class="btn btn--danger" data-act="${act}" data-id="${esc(id || "")}" data-confirmed="1">${ic("delete")}${btn}</button></div>`,
     nntu: () => `${sheetHead("download", "var(--primary)", "Расписание НГТУ")}<form data-form="nntu">
@@ -2833,6 +2902,17 @@
         if (!date || key(date) !== v.date) return err("Выберите дату");
         closeSheet();
         goJournal(date);
+        return;
+      }
+      case "calendarExport": {
+        const start = parseISO(v.from), end = parseISO(v.to);
+        if (!start || !end || key(start) !== v.from || key(end) !== v.to || end < start) return err("Проверьте начало и конец периода");
+        if (daysBetween(start, end) >= 366) return err("Выберите период не длиннее 366 дней");
+        const { content, count, skipped } = calendarFile(start, end, v);
+        if (!count) return err(skipped ? "У пар за этот период нет корректного времени. Проверьте звонки и время в журнале." : "За этот период для выбранных подгрупп нет занятий");
+        download(new Blob([content], { type: "text/calendar;charset=utf-8" }), `raspisanie-${v.from}-${v.to}.ics`);
+        closeSheet();
+        toast(`В календаре ${count} ${plural(count, ["пара", "пары", "пар"])}${skipped ? ` · пропущено без корректного времени: ${skipped}` : ""}`);
         return;
       }
       case "setupIdentity": {
