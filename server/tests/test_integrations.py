@@ -17,7 +17,7 @@ from app.mail.imap import poll
 from app.main import app
 from app.models import MailCursor, MailSource
 from app.routers.push import send_test
-from app.telegram import record_update
+from app.telegram import record_update, setup_chat_ids
 
 
 def mail(sender, text):
@@ -132,6 +132,16 @@ class IntegrationsTest(TestCase):
             self.assertEqual(request.call_args.kwargs["headers"]["content-encoding"], "aes128gcm")
             self.assertFalse(request.call_args.kwargs["allow_redirects"])
             self.assertNotIn(b'"kind"', request.call_args.kwargs["data"])
+
+    def test_telegram_chat_lookup(self):
+        message = {"chat": {"id": -100123, "type": "supergroup"}, "text": "/starosta_id"}
+        self.assertEqual(setup_chat_ids([
+            {"message": message},
+            {"message": message},
+            {"message": {"chat": {"id": 123, "type": "private"}, "text": "/starosta_id"}},
+            {"message": {"chat": {"id": -456, "type": "group"}, "text": "Обычное сообщение"}},
+            {"edited_message": {"chat": {"id": -789, "type": "group"}, "text": "/starosta_id"}},
+        ]), [-100123])
 
     def test_telegram_scoped_snapshots(self):
         group_id, chat_id = self.group["id"], -100987654321

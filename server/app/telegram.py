@@ -1,12 +1,14 @@
 """Сбор снимков опросов из одного настроенного чата. Запуск: python -m app.telegram."""
 from __future__ import annotations
 
+import argparse
 import logging
 import re
 import time
 from datetime import timedelta
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -75,8 +77,8 @@ class TelegramError(Exception):
         self.retry_after = retry_after
 
 
-def get_updates(client: httpx.Client, token: str, offset: int | None) -> list[dict]:
-    params = {"timeout": 25, "allowed_updates": UPDATES}
+def get_updates(client: httpx.Client, token: str, offset: int | None, *, timeout: int = 25) -> list[dict]:
+    params = {"timeout": timeout, "allowed_updates": UPDATES}
     if offset is not None:
         params["offset"] = offset
     response = client.post(f"https://api.telegram.org/bot{token}/getUpdates", json=params)
@@ -87,13 +89,52 @@ def get_updates(client: httpx.Client, token: str, offset: int | None) -> list[di
     return body["result"]
 
 
+def setup_chat_ids(updates: list[dict]) -> list[int]:
+    ids = set()
+    for update in updates:
+        message = update.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        if (message.get("text") == "/starosta_id" and chat.get("type") in ("group", "supergroup")
+                and type(chat_id) is int and chat_id < 0):
+            ids.add(chat_id)
+    return sorted(ids)
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Сбор опросов Telegram")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--chat-id", action="store_true", help="Найти чат по сообщению /starosta_id")
+    mode.add_argument("--list-groups", action="store_true", help="Показать группы на этом сервере")
+    args = parser.parse_args()
+    if args.list_groups:
+        init_db()
+        with SessionLocal() as db:
+            for group in db.scalars(select(Group).order_by(Group.title, Group.id)):
+                print(f"{group.title} · {group.university} · {group.id}")
+        return
+
     token, group_id, chat_id = settings.telegram_token, settings.telegram_group_id, settings.telegram_chat_id
-    if not re.fullmatch(r"\d+:[A-Za-z0-9_-]+", token) or not group_id or chat_id >= 0:
-        raise SystemExit("Укажите токен бота, ID облачной группы и отрицательный ID чата Telegram в .env")
+    if not re.fullmatch(r"\d+:[A-Za-z0-9_-]+", token):
+        raise SystemExit("Укажите токен BotFather в STAROSTA_TELEGRAM_TOKEN в .env")
     logging.basicConfig(level=logging.INFO)
     # URL Bot API содержит токен. Не записываем запросы клиента или тела обновлений в журнал.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    if args.chat_id:
+        try:
+            with httpx.Client(timeout=35, follow_redirects=False) as client:
+                ids = setup_chat_ids(get_updates(client, token, None))
+        except TelegramError as error:
+            raise SystemExit(f"Telegram вернул HTTP {error.status}. Проверьте токен и остановите другие запуски бота.") from None
+        except (httpx.HTTPError, ValueError):
+            raise SystemExit("Не удалось получить обновления Telegram. Проверьте доступ к api.telegram.org.") from None
+        if not ids:
+            raise SystemExit("Не найдено сообщение /starosta_id. Отправьте его в группу с ботом и проверьте Privacy Mode.")
+        for id_ in ids:
+            print(f"STAROSTA_TELEGRAM_CHAT_ID={id_}")
+        return
+    if not group_id or chat_id >= 0:
+        raise SystemExit("Укажите ID облачной группы и отрицательный ID чата Telegram в .env")
     init_db()
     with SessionLocal() as db:
         if not db.get(Group, group_id):
