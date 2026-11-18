@@ -7,7 +7,12 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = {"/", "/index.html", "/privacy.html", "/manifest.webmanifest", "/sw.js"}
-DIRS = ("/css/", "/js/", "/assets/", "/demo/")
+ASSET_TYPES = {
+    "/css/": {".css"},
+    "/js/": {".js"},
+    "/assets/": {".png", ".woff2"},
+    "/demo/": {".json"},
+}
 
 
 class AppHandler(http.server.SimpleHTTPRequestHandler):
@@ -16,7 +21,18 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
     def _allowed(self) -> bool:
         path = unquote(urlsplit(self.path).path)
-        return ".." not in path.split("/") and (path in FILES or any(path.startswith(d) for d in DIRS))
+        if path == "/":
+            return True
+        prefix, _, name = path.rpartition("/")
+        if "\\" in path or not name or name.startswith("."):
+            return False
+        if path not in FILES and Path(name).suffix not in ASSET_TYPES.get(prefix + "/", set()):
+            return False
+        target = ROOT / path.lstrip("/")
+        try:
+            return target.is_file() and target.resolve() == target
+        except (OSError, ValueError):
+            return False
 
     def do_GET(self):
         if not self._allowed():

@@ -1818,7 +1818,7 @@
     ];
   }
   const feedbackBtn = (cls = "btn btn--primary btn--sm") => FEEDBACK_URL ? `<a class="${cls}" href="${esc(FEEDBACK_URL)}" target="_blank" rel="noopener">${ic("star")}Оценить</a>` : "";
-  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> ${DB.settings.preview_real_roster ? "Состав группы настоящий." : DB.settings.preview_real_leader ? "Староста — Юнусов Артём, имена остальных студентов вымышлены." : "ФИО вымышлены."} Расписание составлено на основе открытых данных НГТУ. Отметки, дела и оценки случайные и не отражают реальные результаты студентов.${window.STAROSTA_PREVIEW ? " Аккаунт и почта в этой версии не подключены." : ""}</span>
+  const demoStrip = () => `<div class="demo-strip" role="note">${ic("info")}<span><b>Демонстрация.</b> Расписание составлено на основе открытых данных НГТУ. Отметки, дела и оценки подготовлены для показа.${window.STAROSTA_PREVIEW ? " Изменения сохраняются в этом браузере." : ""}</span>
     <div class="btn-row">${feedbackBtn()}<button class="btn btn--soft btn--sm" data-act="demoExit">Своя группа</button></div></div>`;
 
   /* ----- первый запуск ----- */

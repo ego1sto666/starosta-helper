@@ -1,5 +1,4 @@
 """Собрать публичное демо только из разрешённых файлов, без исходников сервера и личных данных."""
-import csv
 import json
 import re
 import shutil
@@ -20,10 +19,8 @@ FILES = [
 
 def main() -> None:
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "dist" / "teacher-preview"
-    roster_csv = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    local_public = Path(sys.argv[3]) if len(sys.argv) > 3 else None
-    if local_public and not roster_csv:
-        raise SystemExit("Для сверки локального состава нужна выгрузка CSV")
+    if len(sys.argv) > 2:
+        raise SystemExit("Укажите только путь для демонстрационной сборки")
     if target.exists() and any(target.iterdir()):
         raise SystemExit(f"Каталог уже заполнен: {target}")
     data = json.loads((ROOT / "demo/group.json").read_text(encoding="utf-8"))
@@ -37,36 +34,6 @@ def main() -> None:
     if any(l.get("teacher") and not re.fullmatch(r"Преподаватель \d+", l["teacher"]) for l in data.get("lessons", [])):
         raise SystemExit("В расписании примера есть реальные имена преподавателей")
     data["settings"]["preview_version"] = PREVIEW_VERSION
-    if roster_csv:
-        with roster_csv.open(encoding="utf-8-sig", newline="") as f:
-            names = [row[1].strip() for row in csv.reader(f, delimiter=";") if len(row) > 1 and row[0].strip().isdigit()]
-        if (len(names) != len(data["students"]) or len(set(names)) != len(names)
-                or names[7] != "Германскова Екатерина" or names[-1] != "Юнусов Артём"):
-            raise SystemExit("Состав в выгрузке не совпадает с проверенной группой")
-        for s, name in zip(data["students"], names):
-            s["name"] = name
-            s["role"] = "head" if name == "Юнусов Артём" else "deputy" if name == "Германскова Екатерина" else ""
-        data["settings"]["preview_real_roster"] = True
-    if local_public:
-        local = json.loads(local_public.read_text(encoding="utf-8"))
-        students = local.get("students", [])
-        if ([s.get("name") for s in students] != names or len({s.get("id") for s in students}) != len(names)
-                or local.get("settings", {}).get("group") != "26-ИВТ-2-1"
-                or sum(s.get("role") == "head" for s in students) != 1
-                or next(s for s in students if s.get("role") == "head")["name"] != "Юнусов Артём"):
-            raise SystemExit("Локальный состав не совпадает с проверенной выгрузкой")
-        data["students"] = [{"id": s["id"], "name": s["name"], "role": s.get("role", ""),
-                             "subgroup": s.get("subgroup", 0), "subgroups": s.get("subgroups", {}),
-                             "phone": "", "email": "", "telegram": "", "birthday": "", "note": ""} for s in students]
-        data["teachers"] = [{"id": t["id"], "name": t["name"]} for t in local.get("teachers", [])]
-        data["lessons"] = [{k: l[k] for k in ("id", "subject", "day", "num", "week", "kind", "room", "teacher") if k in l}
-                           for l in local.get("lessons", [])]
-        if len(data["teachers"]) != 16 or len(data["lessons"]) != 28:
-            raise SystemExit("Локальное расписание не совпадает с ожидаемым составом")
-        for k in ("bells", "subgroup_count", "own_split", "subgroup_subject_counts"):
-            if k in local["settings"]:
-                data["settings"][k] = local["settings"][k]
-        data["settings"]["preview_from_local"] = True
     if any(any(s.get(k) for k in ("phone", "email", "telegram", "birthday", "ava", "note")) for s in data["students"]):
         raise SystemExit("В публичный состав попали личные поля")
     target.mkdir(parents=True, exist_ok=True)
@@ -91,10 +58,12 @@ def main() -> None:
     sw = (target / "sw.js").read_text(encoding="utf-8").replace('"privacy.html", ', "")
     (target / "sw.js").write_text(sw, encoding="utf-8")
     (target / ".nojekyll").write_text("", encoding="utf-8")
-    roster_note = ("ФИО, подгруппы, роли и расписание взяты из локального приложения." if local_public else
-                   "ФИО 37 студентов взяты из выгрузки состава группы." if roster_csv else
-                   "Имена студентов и преподавателей вымышлены.")
-    (target / "README.md").write_text(f"# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\n{roster_note} Расписание основано на открытых данных НГТУ. Дела, посещаемость и оценки созданы случайно для показа и не отражают реальные результаты студентов. Контактов студентов нет. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
+    (target / "README.md").write_text(
+        "# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\n"
+        "Имена студентов и преподавателей вымышлены. Расписание основано на открытых данных НГТУ. "
+        "Дела, посещаемость и оценки созданы для показа. Изменения сохраняются в браузере.\n",
+        encoding="utf-8",
+    )
     print(f"Собрано файлов: {len(FILES) + 3}. Каталог: {target}")
 
 

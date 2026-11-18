@@ -11,6 +11,7 @@ class StaticAccessTest(unittest.TestCase):
             handler.path = path
             self.assertTrue(handler._allowed(), path)
         for path in ("/server/.env", "/server/dev.db", "/docs/names.xlsx", "/.agents/skills/",
-                     "/js/../server/.env", "/js/%2e%2e/server/.env", "/tests/out/result.txt"):
+                     "/js/../server/.env", "/js/%2e%2e/server/.env", "/tests/out/result.txt",
+                     "/js/", "/assets/", "/demo/", "/js/.env", "/js/%5cserver%5c.env"):
             handler.path = path
             self.assertFalse(handler._allowed(), path)
