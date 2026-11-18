@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+PREVIEW_VERSION = 4
 FILES = [
     "index.html", "manifest.webmanifest", "sw.js", "demo/group.json",
     "css/app.css", "css/tokens.css",
@@ -35,15 +36,7 @@ def main() -> None:
         raise SystemExit("Имена преподавателей в примере не обезличены")
     if any(l.get("teacher") and not re.fullmatch(r"Преподаватель \d+", l["teacher"]) for l in data.get("lessons", [])):
         raise SystemExit("В расписании примера есть реальные имена преподавателей")
-    # Без частной выгрузки публикуется только имя старосты; CSV не копируется в сборку.
-    leaders = [s for s in data["students"] if s.get("id") == "90a6f10b02"]
-    if len(leaders) != 1:
-        raise SystemExit("Не найден профиль старосты для публичного примера")
-    for s in data["students"]:
-        s["role"] = "head" if s is leaders[0] else ""
-    leaders[0]["name"] = "Юнусов Артём"
-    data["settings"]["preview_real_leader"] = True
-    data["settings"]["preview_version"] = 3
+    data["settings"]["preview_version"] = PREVIEW_VERSION
     if roster_csv:
         with roster_csv.open(encoding="utf-8-sig", newline="") as f:
             names = [row[1].strip() for row in csv.reader(f, delimiter=";") if len(row) > 1 and row[0].strip().isdigit()]
@@ -88,7 +81,10 @@ def main() -> None:
     html = (target / "index.html").read_text(encoding="utf-8")
     html = html.replace('<meta name="description"', '<meta name="robots" content="noindex,nofollow">\n  <meta name="description"', 1)
     (target / "index.html").write_text(html, encoding="utf-8")
-    (target / "js/config.js").write_text("// Публичный просмотр: аккаунты и почта не подключены.\nwindow.STAROSTA_PREVIEW = true;\nwindow.STAROSTA_PREVIEW_VERSION = 3;\n", encoding="utf-8")
+    (target / "js/config.js").write_text(
+        "// Публичный просмотр: аккаунты и почта не подключены.\n"
+        "window.STAROSTA_PREVIEW = true;\n"
+        f"window.STAROSTA_PREVIEW_VERSION = {PREVIEW_VERSION};\n", encoding="utf-8")
     manifest = json.loads((target / "manifest.webmanifest").read_text(encoding="utf-8"))
     manifest["start_url"] = "./#demo"
     (target / "manifest.webmanifest").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -97,7 +93,7 @@ def main() -> None:
     (target / ".nojekyll").write_text("", encoding="utf-8")
     roster_note = ("ФИО, подгруппы, роли и расписание взяты из локального приложения." if local_public else
                    "ФИО 37 студентов взяты из выгрузки состава группы." if roster_csv else
-                   "Староста — Юнусов Артём; имена остальных студентов вымышлены.")
+                   "Имена студентов и преподавателей вымышлены.")
     (target / "README.md").write_text(f"# Помощник старосты — демонстрация группы 26-ИВТ-2-1\n\n{roster_note} Расписание основано на открытых данных НГТУ. Дела, посещаемость и оценки созданы случайно для показа и не отражают реальные результаты студентов. Контактов студентов нет. Аккаунты, почта и сервер в этой версии отключены.\n\nОсновной проект разрабатывается отдельно; данные, которые вы вводите здесь, остаются в вашем браузере.\n", encoding="utf-8")
     print(f"Собрано файлов: {len(FILES) + 3}. Каталог: {target}")
 
